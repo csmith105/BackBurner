@@ -10,4 +10,13 @@ artifacts/
 data/
 *.backburner-partial
 worker.local.json
+*.local.json
 appsettings.Local.json
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+server.env
+docs/DEPLOYMENTS.local.md

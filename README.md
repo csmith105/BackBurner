@@ -1,8 +1,8 @@
 # BackBurner
 
-BackBurner is a private, LAN-first distributed media-processing system. A central coordinator queues immutable job definitions; capability-aware workers claim jobs only when their host is available; HandBrakeCLI performs the first supported operation. Windows workers can drain gracefully when a human returns, while dedicated Ubuntu workers yield absolutely to the game-development lease system.
+BackBurner is an open-source, LAN-first distributed media-processing system. A central coordinator queues immutable job definitions; capability-aware workers claim jobs only when their host is available; HandBrakeCLI performs the first supported operation. Windows workers can drain gracefully when a human returns, while shared Ubuntu workers yield absolutely to a higher-priority development lease system.
 
-The coordinator is deployed as a LAN-only native service on `plex`, and the first Windows notification-area worker is running on `CODY-PC`. The broader worker fleet and NAS staging workflow are not yet deployed. No BackBurner worker has written to NASquatch or the Plex libraries.
+The project is an early household-scale prototype. Treat its coordinator as a trusted-LAN service, not an Internet-facing application. Production deployment coordinates and machine-local worker configuration intentionally remain outside the public repository.
 
 ## Current milestone
 
@@ -33,7 +33,8 @@ The coordinator is deployed as a LAN-only native service on `plex`, and the firs
 - `docs/ARCHITECTURE.md`: system shape and invariants.
 - `docs/WORKER-CONTRACT.md`: leasing, retries, interruptions, and availability.
 - `docs/OPERATIONS.md`: local build/run guidance and eventual deployment shape.
-- `docs/DEPLOYMENTS.md`: current installed versions, verification, and rollback coordinates.
+- `docs/WINDOWS-WORKER-SETUP.md`: per-user Windows install and Codex handoff.
+- `docs/DEPLOYMENTS.md`: safe template for private deployment records.
 - `docs/CODEX-INTEGRATION.md`: reliable exclusion for active agent workloads.
 - `docs/DECISIONS.md`: durable decision log.
 - `AGENTS.md`: orientation and guardrails for future Codex agents.
@@ -66,3 +67,11 @@ of putting it in the JSON file. A deliberately unauthenticated trusted-LAN
 deployment leaves that value empty.
 
 BackBurner does not scan, rename, move, or encode anything merely by building or starting the coordinator. A worker must be deliberately configured and a job must be submitted.
+
+For an interactive Windows worker, use the guarded per-user installer described
+in [`docs/WINDOWS-WORKER-SETUP.md`](docs/WINDOWS-WORKER-SETUP.md). It keeps the
+coordinator URL, SMB mappings, and any credential out of the checkout.
+
+## License
+
+BackBurner is available under the [MIT License](LICENSE).

@@ -40,7 +40,7 @@ Every heartbeat identifies the worker as `PersonalDesktop`, `SharedGameWorker`, 
 
 The coordinator derives historical activity intervals from `blockingCategory`, availability, active job, and required capability tags. Workers do not submit or edit history records directly. Repeated identical heartbeats extend one open interval; they must not create one record per heartbeat.
 
-A Cody game-development worker is excluded when either condition is true:
+A shared game-development worker is excluded when either condition is true:
 
 - `/var/lib/cody-worker/lease.json` has `status` other than `idle`.
 - `/var/lib/cody-worker/queue.json` contains a nonempty `requests` array, even if the lease status is idle.
@@ -49,17 +49,9 @@ BackBurner reads these files directly only as a fail-closed availability check. 
 
 With a lease, HandBrake runs through the broker's fenced `run` command inside a lease-tagged systemd scope. BackBurner renews every 10–30 seconds, continues inspecting the development FIFO every worker poll, and safely interrupts and releases as soon as another request appears. The broker's UUID and generation are independent of the coordinator's UUID and generation; both must remain valid.
 
-Known node profile received from the game-worker project:
-
-- Fleet ID and hostname: `cody-gd-nc-1`
-- Linux machine ID: `05f86ae2e1c94331b00c9c6d2630eae8`
-- Ubuntu 26.04.1 LTS x86_64
-- Ryzen 9 6900HX, 8 cores / 16 threads
-- Radeon 680M, 4 GiB firmware-reserved VRAM
-- 24 GB physical DDR5, approximately 18 GiB OS-visible
-- 1 TB Crucial P3 Plus
-
-The worker baseline was reported released and stable at the final integration handoff. BackBurner is still not deployed there; deployment requires installing the local worker and validating broker preemption with synthetic media.
+Machine IDs, hostnames, hardware inventories, and live deployment status belong
+in the ignored private deployment record. Deploying a shared worker requires
+installing it locally and validating broker preemption with synthetic media.
 
 ## Capability examples
 

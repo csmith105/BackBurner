@@ -1,10 +1,17 @@
-# Observed NAS layout
+# NAS layout
 
-Read-only inspection on 2026-09-04 confirmed `\\NASquatch\Media` is reachable over SMB and contains the active roots:
+Keep real server names, share names, mount points, and media titles out of this
+public repository. Worker configuration maps logical roots to machine-local UNC
+paths on Windows or mount points on Linux.
 
-- `\\NASquatch\Media\Plex Movies`
-- `\\NASquatch\Media\Plex Series`
+A deployment can use logical roots such as:
 
-Existing movie directories commonly use `Title (Year)`. Existing series naming varies, so BackBurner will not impose or rewrite names. Cameron supplies the final relative path.
+- `incoming`: source files awaiting processing;
+- `plex-movies`: final movie publication root;
+- `plex-series`: final series publication root;
+- a broader read-only source root used by coordinator directory scanning.
 
-No BackBurner staging directories exist yet and none were created. A future setup pass should agree on a structure resembling `_BackBurner/Incoming`, `_BackBurner/Working`, `_BackBurner/Completed`, and `_BackBurner/Failed`, but those names are proposals only.
+Existing libraries may have their own naming practices, so BackBurner validates
+path safety but does not impose or rewrite media names. The operator supplies
+the final relative path. Staging areas such as `Incoming`, `Working`,
+`Completed`, and `Failed` are deployment choices, not repository defaults.

@@ -22,11 +22,11 @@ The UI can load, edit, save, and discard preset values in a PuTTY-like workflow.
 
 ## 2026-09-04: Logical paths, explicit publication roots
 
-Coordinator jobs store logical root paths rather than Windows UNC or Linux mount syntax. Movies and series are separate roots. Cameron supplies the final relative directory and filename; BackBurner validates safety but does not attempt to correct Plex naming in the first milestone.
+Coordinator jobs store logical root paths rather than Windows UNC or Linux mount syntax. Movies and series are separate roots. The operator supplies the final relative directory and filename; BackBurner validates safety but does not attempt to correct Plex naming in the first milestone.
 
 ## 2026-09-04: Game development has priority on shared nodes
 
-BackBurner treats the Cody worker lease and FIFO queue as an external absolute exclusion. It reads but never participates in or modifies that protocol. This avoids racing a media process against interactive engine work.
+BackBurner treats the game-worker lease and FIFO queue as an external absolute exclusion. It reads but never participates in or modifies that protocol. This avoids racing a media process against interactive engine work.
 
 ## 2026-09-04: Single-process JSON persistence for the prototype
 
@@ -38,7 +38,7 @@ Configure every worker as a personal desktop, shared game worker, or dedicated r
 
 ## 2026-09-05: Shared NUCs participate in the existing broker
 
-Do not create a BackBurner-specific lock on Cody game-development nodes. Hold both the coordinator job fence and an immediate 60-second `cody-workerctl` fence, run HandBrake inside the broker's systemd scope, poll the development FIFO no less often than every 30 seconds, and release when interactive work appears. A failed immediate acquisition is canceled instead of retaining FIFO priority.
+Do not create a BackBurner-specific lock on shared game-development nodes. Hold both the coordinator job fence and an immediate 60-second `cody-workerctl` fence, run HandBrake inside the broker's systemd scope, poll the development FIFO no less often than every 30 seconds, and release when interactive work appears. A failed immediate acquisition is canceled instead of retaining FIFO priority.
 
 ## 2026-09-05: Native versioned systemd deployment for the coordinator
 
@@ -63,3 +63,14 @@ Keep coordinator authentication enabled by default, but permit the deployment to
 ## 2026-09-05: Transition history and passwordless attribution remain in atomic JSON
 
 Keep the household-scale coordinator on its atomically replaced JSON state instead of introducing a database solely for early reporting. Persist worker activity as intervals created on typed state or active-job transitions, not one telemetry row per heartbeat; retain completed intervals for 365 days by default and cap a dashboard snapshot at the newest 5,000. Persist successful output bytes and derive compute time from attempt timestamps. Introduce passwordless local identity records for job attribution and worker ownership, while keeping API authentication a separate deployment concern. Job and batch creation snapshot both identity UUID and display name; heartbeats cannot change machine ownership. Add `blockingCategory` as a new heartbeat property so old coordinator releases ignore it safely during rollback rather than adding rollback-breaking values to the existing availability enum.
+
+## 2026-09-05: Per-user self-contained Windows worker installation
+
+Publish the interactive Windows host as a self-contained `win-x64` release
+under the current user's local application-data directory. Keep versioned
+releases side by side, store machine-local JSON outside the checkout, and launch
+through a per-user Startup shortcut so installation needs no administrator
+rights or shared .NET runtime. Require reachable path mappings and a verified
+HandBrakeCLI before writing configuration. Refuse to replace configuration or
+upgrade while a worker is running; never accept API keys as command-line
+arguments.

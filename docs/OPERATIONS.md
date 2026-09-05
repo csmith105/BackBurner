@@ -2,7 +2,10 @@
 
 ## Status
 
-The coordinator is deployed as `backburner-coordinator.service` on the Ubuntu host `plex` and is reachable on the trusted LAN at `http://plex:5080`. See `DEPLOYMENTS.md` for its release, paths, verification, and rollback coordinates. It was installed as a separate service without changing or restarting Plex. The first Windows notification-area worker is running on `CODY-PC` with checksum-verified HandBrakeCLI 1.11.2 and is gated by the configured human-idle policy. The production NAS staging workflow is not deployed, and BackBurner has not written to NASquatch or a Plex library.
+This public document describes supported operation without publishing a private
+network inventory. Record live release, host, URL, service, state, verification,
+and rollback coordinates in an ignored `DEPLOYMENTS.local.md` based on the
+public `DEPLOYMENTS.md` template.
 
 ## Coordinator development
 
@@ -42,45 +45,48 @@ Select the correct `mode`:
 - `SharedGameWorker`: Cody game-development node; configure both game-worker state paths.
 - `DedicatedRenderNode`: machine whose sole purpose is rendering/encoding; desktop and ambient-CPU gates are skipped.
 
-Windows mapping example:
+Windows mapping example (placeholders only):
 
 ```json
 {
   "paths": {
-    "incoming": "\\\\NASquatch\\Media\\_BackBurner\\Incoming",
-    "plex-movies": "\\\\NASquatch\\Media\\Plex Movies",
-    "plex-series": "\\\\NASquatch\\Media\\Plex Series"
+    "incoming": "\\\\YOUR-NAS\\YOUR-STAGING-SHARE\\Incoming",
+    "plex-movies": "\\\\YOUR-NAS\\YOUR-MOVIE-SHARE",
+    "plex-series": "\\\\YOUR-NAS\\YOUR-SERIES-SHARE"
   }
 }
 ```
 
-Linux should mount the same SMB shares persistently and map them to paths such as `/mnt/nasquatch/media/Plex Movies`. Do not embed SMB credentials in this repository or worker JSON; use the OS credential mechanism and a least-privilege service account.
+Linux should mount the same SMB shares persistently and map them to private
+local mount points. Do not embed SMB credentials in this repository or worker
+JSON; use the OS credential mechanism and a least-privilege service account.
 
 ## Coordinator source scanning
 
 The directory-batch UI can see only logical source roots explicitly configured under `BackBurner:SourceRoots`. In a systemd environment file, a read-only NAS mapping resembles:
 
 ```text
-BackBurner__SourceRoots__nas-media=/volume1/Plex
+BackBurner__SourceRoots__source-media=/mnt/your-read-only-source
 ```
 
 The coordinator account needs read and directory-traversal permission, never write permission, on that mount. Each worker that may claim those jobs must map the same `nas-media` logical root to its local SMB or mounted representation. A scan recognizes a bounded set of common video extensions and is a candidate listing, not a media probe. Results start unchecked and queue nothing until the operator submits a selection. `BackBurner__MaximumScanFiles` defaults to 5,000 and may be lowered for a particularly large tree.
 
 ## Windows interaction
 
-Run `BackBurner.Worker.Windows` in an interactive user session so its notification-area icon and lower-right prompt are visible. It should later be packaged to start at login. The headless CLI is appropriate for validation but cannot present the human-return prompt.
+Run `BackBurner.Worker.Windows` in an interactive user session so its notification-area icon and lower-right prompt are visible. The supported per-user installer publishes a self-contained version, stores configuration outside the checkout, starts it, and registers it at login. See `WINDOWS-WORKER-SETUP.md`. The headless CLI is appropriate for validation but cannot present the human-return prompt.
 
 For a personal desktop, configure `%LOCALAPPDATA%\\BackBurner\\inhibits` in `inhibitDirectories`. Install the Codex hook integration described in `CODEX-INTEGRATION.md` on each participating machine. The repository includes the hook template but deliberately does not modify a user's global Codex settings during development.
 
 ## Ubuntu shared-node exclusion
 
-For `cody-gd-nc-1`, enable game-worker exclusion with these read-only paths:
+For a shared development node, enable game-worker exclusion with the broker's
+private read-only state paths:
 
 ```json
 {
   "mode": "SharedGameWorker",
-  "gameWorkerLeaseFile": "/var/lib/cody-worker/lease.json",
-  "gameWorkerQueueFile": "/var/lib/cody-worker/queue.json",
+  "gameWorkerLeaseFile": "/path/to/game-worker/lease.json",
+  "gameWorkerQueueFile": "/path/to/game-worker/queue.json",
   "codyWorkerBrokerPath": "/usr/local/bin/cody-workerctl",
   "codyWorkerProfile": "cpu",
   "codyWorkerLeaseTtlSeconds": 60,
@@ -96,7 +102,7 @@ Before deployment, exercise this exact sequence with synthetic media: immediate 
 
 - Select a dedicated NAS staging layout and service identity.
 - Install and verify HandBrakeCLI on each worker.
-- Benchmark Cameron's real presets and establish capability tags from actual `HandBrakeCLI --help` output.
+- Benchmark the operator's real presets and establish capability tags from actual `HandBrakeCLI --help` output.
 - Benchmark combined CPU encoding and GPU/upscaling workloads before enabling more than one claim slot on any worker.
 - Configure and verify backup of the coordinator state; add a reverse proxy and TLS before any access beyond the trusted LAN.
 - Package the Windows host and Linux systemd service.

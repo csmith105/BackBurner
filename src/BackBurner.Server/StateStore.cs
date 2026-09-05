@@ -607,7 +607,7 @@ public sealed class StateStore
                 new PresetRecord
                 {
                     Name = "H.265 MKV 1080p (starter)",
-                    Description = "Starter only; Cameron should tune and save real household presets after lab encodes.",
+                    Description = "Starter only; tune and save deployment presets after lab encodes.",
                     Settings = new HandBrakeSettings
                     {
                         Container = "mkv",

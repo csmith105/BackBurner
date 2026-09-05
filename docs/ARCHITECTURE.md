@@ -2,20 +2,20 @@
 
 ## System boundary
 
-BackBurner has one authoritative coordinator and any number of disposable workers. NASquatch stores media bytes; the coordinator stores workflow state; workers perform expensive operations. Plex is a publication destination, not a work queue.
+BackBurner has one authoritative coordinator and any number of disposable workers. Network storage holds media bytes; the coordinator stores workflow state; workers perform expensive operations. A media library is a publication destination, not a work queue.
 
 ```text
 Browser
    |
    v
-Coordinator on plex (API + UI + durable state)
+Coordinator (API + UI + durable state)
    |             ^
  claim/lease     | heartbeat/progress/result
    v             |
 Windows workers and Ubuntu workers
    |
    v
-NASquatch logical roots -> staging / Plex Movies / Plex Series
+Logical storage roots -> staging / movie library / series library
 ```
 
 The coordinator never assumes that a worker can perform every operation. Each heartbeat advertises capabilities such as `handbrake`, `encode:x265`, `encode:nvenc_h265`, or a future `upscale:realesrgan`. Each job carries required capabilities derived from its immutable operation snapshot. Scheduling is set inclusion: a worker may claim a job only if it supplies every requirement.
@@ -88,7 +88,7 @@ Before the first encode on a personal desktop, a configurable preflight notifica
 
 Explicit, expiring JSON inhibit markers are the authoritative local signal that Codex or another higher-priority workload is active. Each task owns one file so concurrent sessions cannot accidentally release one another. Codex lifecycle hooks create/renew/remove these markers; a process CPU sampler is a conservative fallback when hooks are absent or misconfigured. See `CODEX-INTEGRATION.md`.
 
-On a shared Cody node, BackBurner's coordinator lease and the physical-node broker lease are separate fences. The worker must hold both before launching HandBrake. Losing either fence stops publication and returns the coordinator job without charging an encoder failure.
+On a shared development node, BackBurner's coordinator lease and the physical-node broker lease are separate fences. The worker must hold both before launching HandBrake. Losing either fence stops publication and returns the coordinator job without charging an encoder failure.
 
 ## Paths and NAS safety
 
