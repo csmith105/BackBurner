@@ -38,6 +38,11 @@ public sealed class TrayApplicationContext : ApplicationContext, IWorkerNotifier
         };
         trayIcon.DoubleClick += (_, _) => ShowCurrentStatus();
         runtimeStatus.Changed += OnStatusChanged;
+        trayIcon.ShowBalloonTip(
+            5_000,
+            "BackBurner worker is running",
+            "The notification-area icon stays available for status, pause, and stop controls.",
+            ToolTipIcon.Info);
 
         agent = new WorkerAgent(configuration, control, runtimeStatus, this, message => System.Diagnostics.Debug.WriteLine(message));
         agentTask = Task.Run(() => agent.RunAsync(shutdown.Token));

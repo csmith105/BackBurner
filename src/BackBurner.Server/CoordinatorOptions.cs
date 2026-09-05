@@ -3,6 +3,7 @@ namespace BackBurner.Server;
 public sealed class CoordinatorOptions
 {
     public string DataFile { get; set; } = "data/backburner-state.json";
+    public bool RequireAuthentication { get; set; } = true;
     public string AdminApiKey { get; set; } = "";
     public string WorkerApiKey { get; set; } = "";
     public int LeaseSeconds { get; set; } = 45;

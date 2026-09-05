@@ -18,7 +18,10 @@ public sealed class CoordinatorClient : IDisposable
     {
         http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
         http.BaseAddress = new Uri(configuration.CoordinatorUrl.TrimEnd('/') + "/");
-        http.DefaultRequestHeaders.Add("X-BackBurner-Worker-Key", configuration.WorkerApiKey);
+        if (!string.IsNullOrWhiteSpace(configuration.WorkerApiKey))
+        {
+            http.DefaultRequestHeaders.Add("X-BackBurner-Worker-Key", configuration.WorkerApiKey);
+        }
         http.Timeout = TimeSpan.FromSeconds(15);
     }
 

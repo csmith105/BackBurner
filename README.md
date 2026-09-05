@@ -57,8 +57,9 @@ Run a worker after copying `config/worker.example.json` to an untracked `worker.
 dotnet run --project src/BackBurner.Worker.Cli -- worker.local.json
 ```
 
-For deployed workers, prefer supplying the coordinator credential through the
-`BACKBURNER_WORKER_API_KEY` process environment instead of putting it in the
-JSON file.
+When coordinator authentication is enabled, prefer supplying the worker
+credential through the `BACKBURNER_WORKER_API_KEY` process environment instead
+of putting it in the JSON file. A deliberately unauthenticated trusted-LAN
+deployment leaves that value empty.
 
 BackBurner does not scan, rename, move, or encode anything merely by building or starting the coordinator. A worker must be deliberately configured and a job must be submitted.

@@ -13,10 +13,10 @@ builder.Services.AddHostedService<LeaseExpiryService>();
 
 var app = builder.Build();
 var coordinatorOptions = app.Configuration.GetSection("BackBurner").Get<CoordinatorOptions>() ?? new CoordinatorOptions();
-if (!app.Environment.IsDevelopment() &&
+if (coordinatorOptions.RequireAuthentication && !app.Environment.IsDevelopment() &&
     (string.IsNullOrWhiteSpace(coordinatorOptions.AdminApiKey) || string.IsNullOrWhiteSpace(coordinatorOptions.WorkerApiKey)))
 {
-    throw new InvalidOperationException("Production requires BackBurner:AdminApiKey and BackBurner:WorkerApiKey.");
+    throw new InvalidOperationException("Production authentication requires BackBurner:AdminApiKey and BackBurner:WorkerApiKey.");
 }
 
 app.UseDefaultFiles();
@@ -28,7 +28,7 @@ app.Use(async (context, next) =>
         : context.Request.Path.StartsWithSegments("/api/admin")
             ? coordinatorOptions.AdminApiKey
             : null;
-    if (expected is null || (string.IsNullOrEmpty(expected) && app.Environment.IsDevelopment()))
+    if (!coordinatorOptions.RequireAuthentication || expected is null || (string.IsNullOrEmpty(expected) && app.Environment.IsDevelopment()))
     {
         await next();
         return;
@@ -48,6 +48,10 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", at = DateTimeOffset.UtcNow }));
+app.MapGet("/api/config", () => Results.Ok(new
+{
+    requiresAuthentication = coordinatorOptions.RequireAuthentication && !string.IsNullOrWhiteSpace(coordinatorOptions.AdminApiKey)
+}));
 
 var admin = app.MapGroup("/api/admin");
 admin.MapGet("/snapshot", (StateStore store, CancellationToken token) => store.SnapshotAsync(token));

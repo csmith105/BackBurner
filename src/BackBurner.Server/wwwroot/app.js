@@ -1,5 +1,5 @@
 const byId = id => document.getElementById(id);
-const state = { presets: [], scanFiles: [], scanDirectory: null, mode: 'single' };
+const state = { presets: [], scanFiles: [], scanDirectory: null, mode: 'single', requiresAuthentication: true };
 
 byId('admin-key').value = sessionStorage.getItem('backburner-admin-key') || '';
 byId('connect').addEventListener('click', connect);
@@ -18,7 +18,10 @@ byId('batch-source-directory').addEventListener('input', clearScan);
 byId('batch-recursive').addEventListener('change', clearScan);
 
 function headers() {
-  return { 'Content-Type': 'application/json', 'X-BackBurner-Admin-Key': byId('admin-key').value.trim() };
+  const result = { 'Content-Type': 'application/json' };
+  const key = byId('admin-key').value.trim();
+  if (key) result['X-BackBurner-Admin-Key'] = key;
+  return result;
 }
 
 async function api(path, options = {}) {
@@ -546,7 +549,7 @@ function textElement(tag, text, className = '') { const element = document.creat
 function emptyRow() { const row = document.createElement('tr'); const cell = textElement('td', 'Nothing queued yet.', 'empty'); cell.colSpan = 8; row.append(cell); return row; }
 
 async function refresh() {
-  if (!byId('admin-key').value.trim()) {
+  if (state.requiresAuthentication && !byId('admin-key').value.trim()) {
     setAuth(false, 'Key required');
     showMessage('Paste the admin key above and click Connect. The coordinator is running; its administrative API is protected.', 'notice');
     return;
@@ -558,7 +561,20 @@ async function refresh() {
   } catch (error) { handleError(error); }
 }
 
+async function initialize() {
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const configuration = await response.json();
+    state.requiresAuthentication = configuration.requiresAuthentication !== false;
+    byId('auth-box').hidden = !state.requiresAuthentication;
+    await refresh();
+  } catch (error) {
+    handleError(error);
+  }
+}
+
 setMode('single');
-refresh();
+initialize();
 setInterval(refresh, 5000);
 setInterval(updateCountdowns, 1000);

@@ -94,6 +94,29 @@ public sealed class WorkerCoreTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(profile["logicalProcessors"]));
     }
 
+    [Fact]
+    public async Task Empty_worker_api_key_does_not_send_an_authentication_header()
+    {
+        var handler = new CaptureHandler();
+        using var client = new CoordinatorClient(new WorkerConfiguration
+        {
+            CoordinatorUrl = "http://localhost:5080",
+            WorkerId = "lan-worker",
+            DisplayName = "LAN worker",
+            WorkerApiKey = "",
+            Capabilities = ["handbrake"],
+            Paths = new Dictionary<string, string> { ["incoming"] = temporaryRoot }
+        }, handler);
+
+        await client.HeartbeatAsync(new WorkerHeartbeat
+        {
+            WorkerId = "lan-worker",
+            DisplayName = "LAN worker"
+        }, CancellationToken.None);
+
+        Assert.False(handler.HadWorkerKeyHeader);
+    }
+
     [Theory]
     [InlineData("Progress: {\"State\":\"WORKING\",\"Working\":{\"Progress\":0.42,\"ETASeconds\":90}}", 0.42, 90)]
     [InlineData("Encoding: task 1 of 1, 25.50 % (30.00 fps, avg 29.00 fps, ETA 0h01m02s)", 0.255, 62)]
@@ -236,6 +259,17 @@ public sealed class WorkerCoreTests : IDisposable
             }
         }));
         File.WriteAllText(queuePath, JsonSerializer.Serialize(new { requests }));
+    }
+
+    private sealed class CaptureHandler : HttpMessageHandler
+    {
+        public bool HadWorkerKeyHeader { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            HadWorkerKeyHeader = request.Headers.Contains("X-BackBurner-Worker-Key");
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
+        }
     }
 
     public void Dispose()

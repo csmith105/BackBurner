@@ -35,6 +35,12 @@ Coordinator responsibilities:
 - Apply bounded encoder-failure retry policy.
 - Keep worker status, job progress, ETA, error summaries, and an audit event stream.
 
+HTTP authentication is a deployment policy rather than a scheduler invariant.
+It defaults on, but may be explicitly disabled for a coordinator bound only to
+a trusted LAN. The public runtime configuration endpoint lets the browser hide
+the key prompt in that mode. Authentication must be restored before the port is
+reachable from any untrusted network.
+
 ## Worker
 
 The cross-platform worker core is intentionally pull-based. LAN firewall rules only need workers to reach the coordinator. A worker sends availability and capabilities, claims work, resolves logical paths through local mappings, writes a partial output, and atomically publishes the final file.

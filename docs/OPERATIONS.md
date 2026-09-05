@@ -13,20 +13,26 @@ dotnet run --project src/BackBurner.Server
 
 State defaults to `data/backburner-state.json` relative to the server working directory. Set `BackBurner__DataFile` to change it. The server is loopback-only unless its ASP.NET Core URLs are deliberately changed.
 
-Before LAN deployment, set strong independent values for:
+Authentication defaults on. For an authenticated deployment, set strong independent values for:
 
 - `BackBurner__AdminApiKey`
 - `BackBurner__WorkerApiKey`
 
-The prototype web UI sends the admin key from browser session storage. This is acceptable only on a trusted LAN over a controlled origin; add proper user authentication before remote or Internet exposure.
+The prototype web UI sends the admin key from browser session storage. For a
+coordinator that is provably reachable only from a trusted household LAN, set
+`BackBurner__RequireAuthentication=false`; the browser then hides the key prompt
+and workers may leave `workerApiKey` empty. Re-enable authentication before any
+reverse proxy, port forwarding, routed guest network, remote access, or Internet
+exposure.
 
 ## Worker configuration
 
 Copy `config/worker.example.json` to `worker.local.json`; that filename is ignored by Git. Configure a stable worker ID, the coordinator URL and key, HandBrakeCLI path, exact capabilities, and platform-specific logical roots.
 
-Prefer leaving `workerApiKey` empty in the local JSON and supplying
-`BACKBURNER_WORKER_API_KEY` through the process environment or service manager.
-Do not print the value in startup scripts or commit it.
+When coordinator authentication is enabled, prefer leaving `workerApiKey` empty
+in the local JSON and supplying `BACKBURNER_WORKER_API_KEY` through the process
+environment or service manager. In explicit unauthenticated LAN mode, leave both
+sources empty. Do not print a real value in startup scripts or commit it.
 
 Select the correct `mode`:
 

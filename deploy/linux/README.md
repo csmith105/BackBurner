@@ -47,6 +47,11 @@ The LAN listener defaults to port 5080. Restrict that port to the trusted LAN
 at the host or network firewall. A reverse proxy is optional for the LAN-only
 milestone and becomes appropriate when adding TLS or remote access.
 
+For a deliberately unauthenticated household-LAN deployment, keep the secrets
+file protected but set `BackBurner__RequireAuthentication=false`. Do not use
+that mode if port 5080 is reachable through a reverse proxy, port forward,
+untrusted VLAN, VPN peer, or the Internet.
+
 ## Upgrade and rollback
 
 Install every upgrade into a new release directory. Stop the coordinator,
