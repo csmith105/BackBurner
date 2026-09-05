@@ -2,7 +2,7 @@
 
 BackBurner is a private, LAN-first distributed media-processing system. A central coordinator queues immutable job definitions; capability-aware workers claim jobs only when their host is available; HandBrakeCLI performs the first supported operation. Windows workers can drain gracefully when a human returns, while dedicated Ubuntu workers yield absolutely to the game-development lease system.
 
-The repository is currently an executable engineering skeleton, not a production deployment. It establishes the contracts, scheduler, retry rules, HandBrake process control, logical NAS paths, and Windows interaction model before any service is installed on Plex or any write is made to NASquatch.
+The coordinator is deployed as a LAN-only native service on `plex`; the worker fleet and NAS staging workflow are not yet deployed. The repository establishes the contracts, scheduler, retry rules, HandBrake process control, logical NAS paths, and Windows interaction model. No BackBurner worker has written to NASquatch or the Plex libraries.
 
 ## Current milestone
 
@@ -28,6 +28,7 @@ The repository is currently an executable engineering skeleton, not a production
 - `docs/ARCHITECTURE.md`: system shape and invariants.
 - `docs/WORKER-CONTRACT.md`: leasing, retries, interruptions, and availability.
 - `docs/OPERATIONS.md`: local build/run guidance and eventual deployment shape.
+- `docs/DEPLOYMENTS.md`: current installed versions, verification, and rollback coordinates.
 - `docs/CODEX-INTEGRATION.md`: reliable exclusion for active agent workloads.
 - `docs/DECISIONS.md`: durable decision log.
 - `AGENTS.md`: orientation and guardrails for future Codex agents.

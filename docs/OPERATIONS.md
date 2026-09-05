@@ -2,7 +2,7 @@
 
 ## Status
 
-This repository is safe to build and test locally. It has not installed services, mounted NAS shares, written to NASquatch, changed Plex, or deployed to the Ubuntu Plex server.
+The coordinator is deployed as `backburner-coordinator.service` on the Ubuntu host `plex` and is reachable on the trusted LAN at `http://plex:5080`. See `DEPLOYMENTS.md` for its release, paths, verification, and rollback coordinates. It was installed as a separate service without changing or restarting Plex. Workers and the NAS staging workflow are not deployed, and BackBurner has not written to NASquatch or a Plex library.
 
 ## Coordinator development
 
@@ -75,6 +75,12 @@ Before deployment, exercise this exact sequence with synthetic media: immediate 
 - Select a dedicated NAS staging layout and service identity.
 - Install and verify HandBrakeCLI on each worker.
 - Benchmark Cameron's real presets and establish capability tags from actual `HandBrakeCLI --help` output.
-- Install the coordinator on `plex`, add TLS/auth appropriate to the LAN, and configure backup of its state.
+- Configure and verify backup of the coordinator state; add a reverse proxy and TLS before any access beyond the trusted LAN.
 - Package the Windows host and Linux systemd service.
 - Exercise power-loss, coordinator-loss, SMB-loss, and human-return cases using synthetic media before touching the Plex libraries.
+
+## Native Ubuntu coordinator layout
+
+The supported coordinator deployment is a self-contained `linux-x64` release managed by `systemd`; it does not require the .NET SDK on the server. Use the unit, environment template, installation checklist, and rollback procedure under `deploy/linux`. Releases live under `/opt/backburner/releases`, the active release is selected by `/opt/backburner/current`, durable workflow state lives under `/var/lib/backburner`, and real API keys live only in the root-readable `/etc/backburner/server.env` file.
+
+The coordinator service is separate from Plex and requires neither Plex application-data access nor NAS media access. Do not add a dependency on `plexmediaserver.service`, alter the Plex unit, or grant the `backburner` account access to Plex state. Port 5080 is the LAN-only default until a reverse proxy and stronger user authentication are deliberately added.

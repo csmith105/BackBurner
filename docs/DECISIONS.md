@@ -39,3 +39,7 @@ Configure every worker as a personal desktop, shared game worker, or dedicated r
 ## 2026-09-05: Shared NUCs participate in the existing broker
 
 Do not create a BackBurner-specific lock on Cody game-development nodes. Hold both the coordinator job fence and an immediate 60-second `cody-workerctl` fence, run HandBrake inside the broker's systemd scope, poll the development FIFO no less often than every 30 seconds, and release when interactive work appears. A failed immediate acquisition is canceled instead of retaining FIFO priority.
+
+## 2026-09-05: Native versioned systemd deployment for the coordinator
+
+Run the LAN-only coordinator beside Plex as an independent native Linux service rather than introducing a container runtime solely for BackBurner. Publish a self-contained `linux-x64` application, install immutable versioned releases under `/opt/backburner/releases`, and select the active version through `/opt/backburner/current`. Keep workflow state under `/var/lib/backburner` and deployment secrets under `/etc/backburner`, outside every release. The BackBurner unit must not modify, depend on, restart, or share an identity with the Plex unit. This layout keeps deployment small and makes application rollback a symlink change without rolling back or deleting queue state.

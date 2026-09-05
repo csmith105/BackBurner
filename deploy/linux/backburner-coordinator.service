@@ -1,0 +1,34 @@
+[Unit]
+Description=BackBurner Coordinator
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=backburner
+Group=backburner
+WorkingDirectory=/opt/backburner/current
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_EnableDiagnostics=0
+EnvironmentFile=/etc/backburner/server.env
+ExecStart=/opt/backburner/current/BackBurner.Server
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+UMask=0077
+
+# The coordinator needs network access and its state directory, but no access to
+# user homes, devices, kernel controls, or writable system configuration.
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
