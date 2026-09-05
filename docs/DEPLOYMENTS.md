@@ -10,12 +10,12 @@ here.
 - Status: active and enabled on 2026-09-05
 - LAN URL: `http://plex:5080`
 - Service: `backburner-coordinator.service`
-- Release: `20260905-c2862b5`
+- Release: `20260905-e593518`
 - Active link: `/opt/backburner/current`
-- Release directory: `/opt/backburner/releases/20260905-c2862b5`
-- Previous release retained for rollback: `/opt/backburner/releases/20260905-a368eb9`
+- Release directory: `/opt/backburner/releases/20260905-e593518`
+- Previous release retained for rollback: `/opt/backburner/releases/20260905-c2862b5`
 - State: `/var/lib/backburner/backburner-state.json`
-- Pre-upgrade state backup: `/var/lib/backburner/backburner-state.json.pre-20260905-c2862b5`
+- Pre-upgrade state backup: `/var/lib/backburner/backburner-state.json.pre-20260905-e593518`
 - Secrets: `/etc/backburner/server.env`, root-owned mode `0600`
 - Pre-upgrade environment backup: `/etc/backburner/server.env.pre-20260905-395effd`
 - Runtime: self-contained .NET 10 `linux-x64`; no server SDK or shared runtime
@@ -31,7 +31,8 @@ Deployment verification:
 - The browser dashboard returned HTTP 200 across the LAN.
 - The deployed web console contains Dashboard, New job, Workers & queue, and
   History tabs; its static asset URLs are versioned to prevent mixed old/new
-  browser caches.
+  browser caches. The masthead intentionally contains only the `BackBurner_`
+  wordmark.
 - The New job tab contains the read-only directory scanner, atomic batch
   submission UI, and Monokai Classic palette.
 - The fleet dashboard shows typed worker roles, human/agent/cooldown/working
@@ -63,7 +64,7 @@ upgrade or worker verification.
 
 To roll back this release, stop the coordinator, repoint
 `/opt/backburner/current` to
-`/opt/backburner/releases/20260905-a368eb9`, restore
+`/opt/backburner/releases/20260905-c2862b5`, restore
 `/etc/backburner/server.env.pre-20260905-395effd` if the prior authenticated
 behavior is desired, and start the coordinator again. Verify health and state
 access before removing any newer release. Do not
