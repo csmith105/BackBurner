@@ -10,9 +10,10 @@ here.
 - Status: active and enabled on 2026-09-05
 - LAN URL: `http://plex:5080`
 - Service: `backburner-coordinator.service`
-- Release: `20260905-9e3e55d`
+- Release: `20260905-1c7b650`
 - Active link: `/opt/backburner/current`
-- Release directory: `/opt/backburner/releases/20260905-9e3e55d`
+- Release directory: `/opt/backburner/releases/20260905-1c7b650`
+- Previous release retained for rollback: `/opt/backburner/releases/20260905-9e3e55d`
 - State: `/var/lib/backburner/backburner-state.json`
 - Secrets: `/etc/backburner/server.env`, root-owned mode `0600`
 - Runtime: self-contained .NET 10 `linux-x64`; no server SDK or shared runtime
@@ -26,24 +27,29 @@ Deployment verification:
 - An unauthenticated admin request returned HTTP 401; an authenticated snapshot
   succeeded.
 - The browser dashboard returned HTTP 200 across the LAN.
+- The deployed dashboard contains the read-only directory scanner, atomic batch
+  submission UI, and Monokai Classic palette.
+- The coordinator account can read and traverse the configured `nas-media`
+  source root. The underlying NAS media mount remains read-only.
 - Plex remained active, returned the same claimed server identity and version,
   and had zero restarts during deployment.
 - The existing NAS media mount remained read-only.
 - No Plex unit, application-data path, account, network setting, or NAS mount was
   changed by the deployment.
 
-The initial state contains only the built-in starter preset, with no jobs or
-workers. Before queuing real media, configure and validate a worker using
-synthetic input.
+The first development worker, `cody-pc-personal`, registered successfully from
+the Windows desktop. It intentionally reports `Misconfigured` because
+`HandBrakeCLI` is not installed on that machine yet, so it cannot claim a job.
+No job or batch was queued and no real media was scanned or changed during the
+upgrade.
 
 ### Rollback
 
-The first deployment has no earlier BackBurner release. To disable it without
-affecting Plex, stop and disable only `backburner-coordinator.service`. Preserve
+To roll back this release, stop the coordinator, repoint
+`/opt/backburner/current` to
+`/opt/backburner/releases/20260905-9e3e55d`, and start the coordinator again.
+Verify health and authenticated state before removing any newer release. Do not
+roll back or delete workflow state unless the release's documented schema
+procedure explicitly requires it. To disable BackBurner without affecting
+Plex, stop and disable only `backburner-coordinator.service`; preserve
 `/var/lib/backburner` and `/etc/backburner`.
-
-After a later upgrade, stop the coordinator, repoint
-`/opt/backburner/current` to the prior immutable release, and start the
-coordinator again. Verify health and authenticated state before removing any
-newer release. Do not roll back or delete workflow state unless the release's
-documented schema procedure explicitly requires it.
