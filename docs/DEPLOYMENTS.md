@@ -10,13 +10,14 @@ here.
 - Status: active and enabled on 2026-09-05
 - LAN URL: `http://plex:5080`
 - Service: `backburner-coordinator.service`
-- Release: `20260905-2b3b634`
+- Release: `20260905-395effd`
 - Active link: `/opt/backburner/current`
-- Release directory: `/opt/backburner/releases/20260905-2b3b634`
-- Previous release retained for rollback: `/opt/backburner/releases/20260905-1c7b650`
+- Release directory: `/opt/backburner/releases/20260905-395effd`
+- Previous release retained for rollback: `/opt/backburner/releases/20260905-2b3b634`
 - State: `/var/lib/backburner/backburner-state.json`
-- Pre-upgrade state backup: `/var/lib/backburner/backburner-state.json.pre-20260905-2b3b634`
+- Pre-upgrade state backup: `/var/lib/backburner/backburner-state.json.pre-20260905-395effd`
 - Secrets: `/etc/backburner/server.env`, root-owned mode `0600`
+- Pre-upgrade environment backup: `/etc/backburner/server.env.pre-20260905-395effd`
 - Runtime: self-contained .NET 10 `linux-x64`; no server SDK or shared runtime
   installation
 
@@ -25,8 +26,8 @@ Deployment verification:
 - The BackBurner service was active, enabled, running as user and group
   `backburner`, and had zero restarts.
 - `/api/health` returned `ok` locally and across the LAN.
-- An unauthenticated admin request returned HTTP 401; an authenticated snapshot
-  succeeded.
+- `/api/config` reports authentication disabled, and unauthenticated admin and
+  worker API requests succeed on the household LAN as explicitly configured.
 - The browser dashboard returned HTTP 200 across the LAN.
 - The deployed dashboard contains the read-only directory scanner, atomic batch
   submission UI, and Monokai Classic palette.
@@ -41,18 +42,20 @@ Deployment verification:
 - No Plex unit, application-data path, account, network setting, or NAS mount was
   changed by the deployment.
 
-The first development worker, `cody-pc-personal`, registered successfully from
-the Windows desktop with its `PersonalDesktop` role and host hardware profile.
-It intentionally reports `Misconfigured` because `HandBrakeCLI` is not installed
-on that machine yet, so it cannot claim a job. No job or batch was queued and no
-real media was scanned or changed during the upgrade.
+The first development worker, `cody-pc-personal`, is running as the interactive
+Windows notification-area host with its `PersonalDesktop` role and host hardware
+profile. It intentionally reports `Misconfigured` because `HandBrakeCLI` is not
+installed on that machine yet, so it cannot claim a job. No job or batch was
+queued and no real media was scanned or changed during the upgrade.
 
 ### Rollback
 
 To roll back this release, stop the coordinator, repoint
 `/opt/backburner/current` to
-`/opt/backburner/releases/20260905-1c7b650`, and start the coordinator again.
-Verify health and authenticated state before removing any newer release. Do not
+`/opt/backburner/releases/20260905-2b3b634`, restore
+`/etc/backburner/server.env.pre-20260905-395effd` if the prior authenticated
+behavior is desired, and start the coordinator again. Verify health and state
+access before removing any newer release. Do not
 roll back or delete workflow state unless the release's documented schema
 procedure explicitly requires it. To disable BackBurner without affecting
 Plex, stop and disable only `backburner-coordinator.service`; preserve
