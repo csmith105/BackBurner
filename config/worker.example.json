@@ -15,6 +15,10 @@
   "systemCpuBusyPercent": 20,
   "gameWorkerLeaseFile": null,
   "gameWorkerQueueFile": null,
+  "codyWorkerBrokerPath": "/usr/local/bin/cody-workerctl",
+  "codyWorkerProfile": "cpu",
+  "codyWorkerLeaseTtlSeconds": 60,
+  "codyWorkerRenewSeconds": 20,
   "capabilities": [
     "handbrake",
     "encode:x264",

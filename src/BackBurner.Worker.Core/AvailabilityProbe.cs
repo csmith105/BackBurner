@@ -23,7 +23,7 @@ public sealed class AvailabilityProbe
         this.control = control;
     }
 
-    public AvailabilitySnapshot Check(bool jobRunning = false)
+    public AvailabilitySnapshot Check(bool jobRunning = false, string? ownedGameLeaseId = null)
     {
         if (control.IsOperatorPaused)
         {
@@ -58,7 +58,7 @@ public sealed class AvailabilityProbe
 
         if (configuration.GameWorkerLeaseFile is not null && configuration.GameWorkerQueueFile is not null)
         {
-            var gameWorker = CheckGameWorker(configuration.GameWorkerLeaseFile, configuration.GameWorkerQueueFile);
+            var gameWorker = CheckGameWorker(configuration.GameWorkerLeaseFile, configuration.GameWorkerQueueFile, ownedGameLeaseId);
             if (gameWorker is not null)
             {
                 return gameWorker;
@@ -143,14 +143,26 @@ public sealed class AvailabilityProbe
         }
     }
 
-    private static AvailabilitySnapshot? CheckGameWorker(string leaseFile, string queueFile)
+    private static AvailabilitySnapshot? CheckGameWorker(string leaseFile, string queueFile, string? ownedLeaseId)
     {
         try
         {
             using var lease = ReadAtomicJson(leaseFile);
             using var queue = ReadAtomicJson(queueFile);
             var status = lease.RootElement.TryGetProperty("status", out var statusValue) ? statusValue.GetString() : null;
-            if (!string.Equals(status, "idle", StringComparison.OrdinalIgnoreCase))
+            var ownsCurrentLease = false;
+            if (string.Equals(status, "leased", StringComparison.OrdinalIgnoreCase)
+                && ownedLeaseId is not null
+                && lease.RootElement.TryGetProperty("lease", out var leaseValue)
+                && leaseValue.ValueKind == JsonValueKind.Object)
+            {
+                var currentLeaseId = leaseValue.TryGetProperty("lease_id", out var leaseIdValue) ? leaseIdValue.GetString() : null;
+                var expiresAtValue = leaseValue.TryGetProperty("expires_at", out var expiryValue) ? expiryValue.GetString() : null;
+                ownsCurrentLease = string.Equals(currentLeaseId, ownedLeaseId, StringComparison.OrdinalIgnoreCase)
+                    && DateTimeOffset.TryParse(expiresAtValue, out var expiresAt)
+                    && expiresAt > DateTimeOffset.UtcNow;
+            }
+            if (!string.Equals(status, "idle", StringComparison.OrdinalIgnoreCase) && !ownsCurrentLease)
             {
                 return new(WorkerAvailability.GameWorkerReserved, $"Game-worker state is '{status ?? "unknown"}'.");
             }
@@ -162,7 +174,9 @@ public sealed class AvailabilityProbe
             {
                 return new(WorkerAvailability.GameWorkerReserved, "Interactive game-development work is waiting in the FIFO queue.");
             }
-            return null;
+            return ownsCurrentLease
+                ? new(WorkerAvailability.Available, "BackBurner owns the current short broker lease and the development queue is empty.")
+                : null;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {

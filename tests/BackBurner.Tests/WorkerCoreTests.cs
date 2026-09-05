@@ -1,5 +1,6 @@
 using BackBurner.Contracts;
 using BackBurner.Worker.Core;
+using System.Text.Json;
 
 namespace BackBurner.Tests;
 
@@ -100,6 +101,62 @@ public sealed class WorkerCoreTests : IDisposable
         Assert.Equal(WorkerAvailability.Available, result.Availability);
     }
 
+    [Fact]
+    public void Shared_worker_accepts_its_own_unexpired_broker_lease_when_development_queue_is_empty()
+    {
+        var leasePath = Path.Combine(temporaryRoot, "lease.json");
+        var queuePath = Path.Combine(temporaryRoot, "queue.json");
+        WriteBrokerState(leasePath, queuePath, "backburner-lease", requests: []);
+        var configuration = CreateSharedConfiguration(leasePath, queuePath);
+        var probe = new AvailabilityProbe(configuration, new WorkerControl());
+
+        var result = probe.Check(jobRunning: true, ownedGameLeaseId: "backburner-lease");
+
+        Assert.Equal(WorkerAvailability.Available, result.Availability);
+    }
+
+    [Fact]
+    public void Shared_worker_yields_its_broker_lease_when_development_work_queues()
+    {
+        var leasePath = Path.Combine(temporaryRoot, "lease.json");
+        var queuePath = Path.Combine(temporaryRoot, "queue.json");
+        WriteBrokerState(leasePath, queuePath, "backburner-lease", requests: [new { request_id = "developer" }]);
+        var configuration = CreateSharedConfiguration(leasePath, queuePath);
+        var probe = new AvailabilityProbe(configuration, new WorkerControl());
+
+        var result = probe.Check(jobRunning: true, ownedGameLeaseId: "backburner-lease");
+
+        Assert.Equal(WorkerAvailability.GameWorkerReserved, result.Availability);
+        Assert.True(result.RequiresImmediateYield);
+    }
+
+    [Fact]
+    public void Shared_worker_wraps_handbrake_in_the_existing_fenced_broker_scope()
+    {
+        var configuration = CreateSharedConfiguration("lease.json", "queue.json");
+        var broker = new CodyWorkerBroker(configuration);
+        var lease = new CodyWorkerLease("lease-id", 42, "request-id", DateTimeOffset.UtcNow.AddMinutes(1), "/tmp/workspace");
+
+        var startInfo = broker.CreateHandBrakeStartInfo(lease, "/usr/bin/HandBrakeCLI", ["--json", "-i", "/media/input.mkv"]);
+        var arguments = startInfo.ArgumentList.ToArray();
+
+        Assert.Equal("/usr/local/bin/cody-workerctl", startInfo.FileName);
+        Assert.Equal(["--compact", "run", "--lease-id", "lease-id", "--generation", "42", "--cwd", ".", "--", "/usr/bin/HandBrakeCLI", "--json", "-i", "/media/input.mkv"], arguments);
+    }
+
+    [Fact]
+    public void Shared_worker_acquire_request_is_short_lived_and_never_sticky_in_the_fifo()
+    {
+        var configuration = CreateSharedConfiguration("lease.json", "queue.json");
+
+        var startInfo = CodyWorkerBroker.CreateAcquireStartInfo(configuration, "request-id", "Test encode");
+        var arguments = startInfo.ArgumentList.ToArray();
+
+        Assert.Equal("60", arguments[Array.IndexOf(arguments, "--ttl") + 1]);
+        Assert.Equal("60", arguments[Array.IndexOf(arguments, "--queue-ttl") + 1]);
+        Assert.Equal("cpu", arguments[Array.IndexOf(arguments, "--profile") + 1]);
+    }
+
     private static WorkerConfiguration CreateDedicatedConfiguration(string inhibitDirectory) => new()
     {
         CoordinatorUrl = "http://localhost:5080",
@@ -110,6 +167,34 @@ public sealed class WorkerCoreTests : IDisposable
         Capabilities = ["handbrake"],
         Paths = new Dictionary<string, string> { ["incoming"] = Path.GetTempPath() }
     };
+
+    private static WorkerConfiguration CreateSharedConfiguration(string leasePath, string queuePath) => new()
+    {
+        CoordinatorUrl = "http://localhost:5080",
+        WorkerId = "shared-worker",
+        DisplayName = "Shared worker",
+        Mode = WorkerMode.SharedGameWorker,
+        GameWorkerLeaseFile = leasePath,
+        GameWorkerQueueFile = queuePath,
+        Capabilities = ["handbrake"],
+        Paths = new Dictionary<string, string> { ["incoming"] = Path.GetTempPath() }
+    };
+
+    private static void WriteBrokerState(string leasePath, string queuePath, string leaseId, object[] requests)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(leasePath)!);
+        File.WriteAllText(leasePath, JsonSerializer.Serialize(new
+        {
+            status = "leased",
+            generation = 42,
+            lease = new
+            {
+                lease_id = leaseId,
+                expires_at = DateTimeOffset.UtcNow.AddMinutes(1)
+            }
+        }));
+        File.WriteAllText(queuePath, JsonSerializer.Serialize(new { requests }));
+    }
 
     public void Dispose()
     {

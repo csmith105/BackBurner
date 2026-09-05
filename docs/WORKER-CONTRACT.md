@@ -41,7 +41,9 @@ A Cody game-development worker is excluded when either condition is true:
 - `/var/lib/cody-worker/lease.json` has `status` other than `idle`.
 - `/var/lib/cody-worker/queue.json` contains a nonempty `requests` array, even if the lease status is idle.
 
-BackBurner reads these files but never locks or modifies them. Their writers serialize on `/var/lib/cody-worker/.state.lock` and atomically replace the JSON files, so readers must tolerate a transient read/replace race and conservatively report unavailable on malformed or missing state when the exclusion integration is enabled.
+BackBurner reads these files directly only as a fail-closed availability check. It never writes them or takes `.state.lock` itself. To perform work it invokes the existing `/usr/local/bin/cody-workerctl` broker, requests an immediate 60-second background lease with a 60-second queue-entry lifetime, and cancels the request immediately if no lease is granted. It never remains in the FIFO waiting for priority.
+
+With a lease, HandBrake runs through the broker's fenced `run` command inside a lease-tagged systemd scope. BackBurner renews every 10–30 seconds, continues inspecting the development FIFO every worker poll, and safely interrupts and releases as soon as another request appears. The broker's UUID and generation are independent of the coordinator's UUID and generation; both must remain valid.
 
 Known node profile received from the game-worker project:
 
@@ -53,7 +55,7 @@ Known node profile received from the game-worker project:
 - 24 GB physical DDR5, approximately 18 GiB OS-visible
 - 1 TB Crucial P3 Plus
 
-Its first game-engine production lease is currently live. Do not use it for BackBurner until its local worker is installed and the exclusion detector reports availability.
+The worker baseline was reported released and stable at the final integration handoff. BackBurner is still not deployed there; deployment requires installing the local worker and validating broker preemption with synthetic media.
 
 ## Capability examples
 

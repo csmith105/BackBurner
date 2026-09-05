@@ -15,7 +15,7 @@ The repository is currently an executable engineering skeleton, not a production
 - Windows idle detection and a notification-area host with Pause and Stop & Requeue actions.
 - Personal-desktop, shared-game-worker, and dedicated-render-node availability modes.
 - Explicit Codex inhibit markers, lifecycle-hook templates, and CPU monitoring fallback.
-- Linux exclusion checks compatible with the Cody game-worker lease and queue files.
+- Full participation in the Cody game-worker broker: short leases, fenced execution, queue preemption, and prompt release.
 - Logical path mappings so the same job can resolve SMB paths on Windows and mounted paths on Linux.
 
 ## Repository map

@@ -56,12 +56,19 @@ For `cody-gd-nc-1`, enable game-worker exclusion with these read-only paths:
 
 ```json
 {
+  "mode": "SharedGameWorker",
   "gameWorkerLeaseFile": "/var/lib/cody-worker/lease.json",
-  "gameWorkerQueueFile": "/var/lib/cody-worker/queue.json"
+  "gameWorkerQueueFile": "/var/lib/cody-worker/queue.json",
+  "codyWorkerBrokerPath": "/usr/local/bin/cody-workerctl",
+  "codyWorkerProfile": "cpu",
+  "codyWorkerLeaseTtlSeconds": 60,
+  "codyWorkerRenewSeconds": 20
 }
 ```
 
-BackBurner must run under a user that can read those two files and access its configured NAS mounts. It must not receive permission to modify the game-worker state.
+BackBurner must run as the broker-enabled `cody` user so `cody-workerctl run` can create the fenced user-systemd scope, while also being able to read the two state files and access its configured NAS mounts. BackBurner never edits broker JSON directly. Use profile `gpu` instead of `cpu` only for jobs whose configured worker capability genuinely requires the shared GPU.
+
+Before deployment, exercise this exact sequence with synthetic media: immediate acquisition on an idle/empty node, a 60-second lease renewal, a development request joining during an encode, HandBrake interruption within 30 seconds, coordinator requeue with no failure charged, broker cleanup, and successful acquisition by the waiting development task.
 
 ## Production deployment still required
 

@@ -28,6 +28,10 @@ public sealed record WorkerConfiguration
     public decimal SystemCpuBusyPercent { get; init; } = 20;
     public string? GameWorkerLeaseFile { get; init; }
     public string? GameWorkerQueueFile { get; init; }
+    public string CodyWorkerBrokerPath { get; init; } = "/usr/local/bin/cody-workerctl";
+    public string CodyWorkerProfile { get; init; } = "cpu";
+    public int CodyWorkerLeaseTtlSeconds { get; init; } = 60;
+    public int CodyWorkerRenewSeconds { get; init; } = 20;
     public string[] InhibitFiles { get; init; } = [];
     public string[] InhibitDirectories { get; init; } = [];
     public int CoordinatorLossStopSeconds { get; init; } = 20;
@@ -106,6 +110,25 @@ public sealed record WorkerConfiguration
         if (Mode == WorkerMode.SharedGameWorker && GameWorkerLeaseFile is null)
         {
             throw new InvalidOperationException("SharedGameWorker mode requires the game-worker lease and queue files.");
+        }
+        if (Mode == WorkerMode.SharedGameWorker)
+        {
+            if (string.IsNullOrWhiteSpace(CodyWorkerBrokerPath))
+            {
+                throw new InvalidOperationException("SharedGameWorker mode requires codyWorkerBrokerPath.");
+            }
+            if (CodyWorkerProfile is not ("cpu" or "gpu"))
+            {
+                throw new InvalidOperationException("codyWorkerProfile must be cpu or gpu for a background tenant.");
+            }
+            if (CodyWorkerLeaseTtlSeconds != 60)
+            {
+                throw new InvalidOperationException("SharedGameWorker mode requires a 60-second broker lease.");
+            }
+            if (CodyWorkerRenewSeconds is < 10 or > 30 || CodyWorkerRenewSeconds >= CodyWorkerLeaseTtlSeconds)
+            {
+                throw new InvalidOperationException("codyWorkerRenewSeconds must be between 10 and 30 and shorter than the lease TTL.");
+            }
         }
     }
 }

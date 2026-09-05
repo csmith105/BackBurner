@@ -43,7 +43,7 @@ The headless CLI host is suitable for Ubuntu. The Windows host adds notification
 Workers have an explicit operating mode:
 
 - `PersonalDesktop` requires sustained human and machine inactivity, honors Codex inhibit markers, watches Codex/system CPU, and warns before claiming work.
-- `SharedGameWorker` yields to the Cody game-worker lease or any queued game request. Once that external exclusion is clear, it can claim immediately.
+- `SharedGameWorker` joins the existing Cody broker only after the development queue is empty. It uses a 60-second fenced lease, launches HandBrake through `cody-workerctl run`, checks the FIFO every worker poll (maximum 30 seconds), and releases promptly when development work appears.
 - `DedicatedRenderNode` bypasses human-idle and ambient-CPU gates, but still honors explicit operator and inhibit controls.
 
 ## Human return and drain behavior
@@ -61,6 +61,8 @@ Before the first encode on a personal desktop, a configurable preflight notifica
 ## Higher-priority host work
 
 Explicit, expiring JSON inhibit markers are the authoritative local signal that Codex or another higher-priority workload is active. Each task owns one file so concurrent sessions cannot accidentally release one another. Codex lifecycle hooks create/renew/remove these markers; a process CPU sampler is a conservative fallback when hooks are absent or misconfigured. See `CODEX-INTEGRATION.md`.
+
+On a shared Cody node, BackBurner's coordinator lease and the physical-node broker lease are separate fences. The worker must hold both before launching HandBrake. Losing either fence stops publication and returns the coordinator job without charging an encoder failure.
 
 ## Paths and NAS safety
 

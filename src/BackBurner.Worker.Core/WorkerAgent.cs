@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Text.Json;
 using BackBurner.Contracts;
 
 namespace BackBurner.Worker.Core;
@@ -12,6 +14,7 @@ public sealed class WorkerAgent : IDisposable
     private readonly WorkerRuntimeStatus runtimeStatus;
     private readonly IWorkerNotifier notifier;
     private readonly Action<string> log;
+    private readonly CodyWorkerBroker? codyWorkerBroker;
     private Dictionary<string, string> profile = new(StringComparer.OrdinalIgnoreCase);
     private string? startupError;
 
@@ -31,6 +34,10 @@ public sealed class WorkerAgent : IDisposable
         coordinator = new CoordinatorClient(configuration, httpHandler);
         pathResolver = new LogicalPathResolver(configuration.Paths);
         availabilityProbe = new AvailabilityProbe(configuration, control);
+        if (configuration.Mode == WorkerMode.SharedGameWorker)
+        {
+            codyWorkerBroker = new CodyWorkerBroker(configuration, this.log);
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -40,7 +47,7 @@ public sealed class WorkerAgent : IDisposable
             profile = await ToolProbe.BuildProfileAsync(configuration, cancellationToken);
             log($"HandBrake ready: {profile["handBrakeVersion"]}");
         }
-        catch (Exception exception) when (exception is IOException or InvalidOperationException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or UnauthorizedAccessException or Win32Exception)
         {
             startupError = exception.Message;
             log($"Worker is misconfigured: {startupError}");
@@ -70,7 +77,47 @@ public sealed class WorkerAgent : IDisposable
                             {
                                 continue;
                             }
-                            await ExecuteAsync(lease, cancellationToken);
+                            CodyWorkerLease? codyLease = null;
+                            try
+                            {
+                                if (codyWorkerBroker is not null)
+                                {
+                                    try
+                                    {
+                                        codyLease = await codyWorkerBroker.TryAcquireAsync(lease.Job, cancellationToken);
+                                    }
+                                    catch (Exception exception) when (exception is IOException or InvalidOperationException or JsonException or Win32Exception)
+                                    {
+                                        log($"Cody worker broker acquisition failed: {exception.Message}");
+                                        await coordinator.InterruptAsync(lease.Job.Id, new InterruptionReport
+                                        {
+                                            WorkerId = configuration.WorkerId,
+                                            Lease = lease.Lease,
+                                            Reason = $"The Cody worker broker could not be used safely: {exception.Message}"
+                                        }, cancellationToken);
+                                        continue;
+                                    }
+                                    if (codyLease is null)
+                                    {
+                                        await coordinator.InterruptAsync(lease.Job.Id, new InterruptionReport
+                                        {
+                                            WorkerId = configuration.WorkerId,
+                                            Lease = lease.Lease,
+                                            Reason = "The Cody worker broker did not grant an immediate background lease; development work keeps priority."
+                                        }, cancellationToken);
+                                        continue;
+                                    }
+                                    log($"Acquired Cody worker broker generation {codyLease.Generation} for '{lease.Job.DisplayName}'.");
+                                }
+                                await ExecuteAsync(lease, codyLease, cancellationToken);
+                            }
+                            finally
+                            {
+                                if (codyLease is not null && codyWorkerBroker is not null)
+                                {
+                                    await ReleaseCodyLeaseAsync(codyWorkerBroker, codyLease);
+                                }
+                            }
                         }
                     }
                 }
@@ -89,7 +136,7 @@ public sealed class WorkerAgent : IDisposable
         }
     }
 
-    private async Task ExecuteAsync(JobLease claimed, CancellationToken cancellationToken)
+    private async Task ExecuteAsync(JobLease claimed, CodyWorkerLease? codyLease, CancellationToken cancellationToken)
     {
         var job = claimed.Job;
         log($"Claimed '{job.DisplayName}' generation {claimed.Lease.Generation}.");
@@ -119,13 +166,18 @@ public sealed class WorkerAgent : IDisposable
                 return;
             }
 
-            session = HandBrakeSession.Start(configuration.HandBrakePath, source, partialDestination, job.Settings);
+            var handBrakeArguments = HandBrakeArgumentBuilder.Build(source, partialDestination, job.Settings);
+            var startInfo = codyLease is null
+                ? HandBrakeSession.CreateProcessStartInfo(configuration.HandBrakePath, handBrakeArguments)
+                : codyWorkerBroker!.CreateHandBrakeStartInfo(codyLease, configuration.HandBrakePath, handBrakeArguments);
+            session = HandBrakeSession.Start(startInfo);
             var humanReturnNotified = false;
             var pauseUntilIdle = false;
             var lastCoordinatorContact = DateTimeOffset.UtcNow;
+            var nextCodyRenewal = DateTimeOffset.UtcNow.AddSeconds(configuration.CodyWorkerRenewSeconds);
             while (!session.Completion.IsCompleted)
             {
-                var availability = availabilityProbe.Check(jobRunning: true);
+                var availability = availabilityProbe.Check(jobRunning: true, ownedGameLeaseId: codyLease?.LeaseId);
                 var command = control.ConsumeCommand();
                 if (availability.RequiresImmediateYield)
                 {
@@ -136,6 +188,25 @@ public sealed class WorkerAgent : IDisposable
                 {
                     await InterruptAsync(session, job, claimed.Lease, partialDestination, "Stopped by the local user and returned to the queue.", cancellationToken);
                     return;
+                }
+                if (codyLease is not null && codyWorkerBroker is not null && DateTimeOffset.UtcNow >= nextCodyRenewal)
+                {
+                    try
+                    {
+                        codyLease = await codyWorkerBroker.RenewAsync(codyLease, cancellationToken);
+                        nextCodyRenewal = DateTimeOffset.UtcNow.AddSeconds(configuration.CodyWorkerRenewSeconds);
+                    }
+                    catch (Exception exception) when (exception is IOException or InvalidOperationException or JsonException or Win32Exception)
+                    {
+                        await InterruptAsync(
+                            session,
+                            job,
+                            claimed.Lease,
+                            partialDestination,
+                            $"Cody worker broker lease could not be renewed: {exception.Message}",
+                            cancellationToken);
+                        return;
+                    }
                 }
                 if (command == WorkerControlCommand.Pause)
                 {
@@ -205,6 +276,20 @@ public sealed class WorkerAgent : IDisposable
             var result = await session.Completion;
             if (result.ExitCode != 0)
             {
+                var brokerAvailability = codyLease is null
+                    ? null
+                    : availabilityProbe.Check(jobRunning: true, ownedGameLeaseId: codyLease.LeaseId);
+                if (brokerAvailability?.RequiresImmediateYield == true)
+                {
+                    await InterruptAsync(
+                        session,
+                        job,
+                        claimed.Lease,
+                        partialDestination,
+                        $"The fenced broker command ended after development work took priority: {brokerAvailability.Reason}",
+                        cancellationToken);
+                    return;
+                }
                 DeletePartial(partialDestination);
                 await coordinator.FailAsync(job.Id, new FailureReport
                 {
@@ -225,6 +310,37 @@ public sealed class WorkerAgent : IDisposable
                     Error = "HandBrakeCLI exited successfully but produced no nonempty output."
                 }, cancellationToken);
                 return;
+            }
+
+            if (codyLease is not null && codyWorkerBroker is not null)
+            {
+                try
+                {
+                    codyLease = await codyWorkerBroker.RenewAsync(codyLease, cancellationToken);
+                    var brokerAvailability = availabilityProbe.Check(jobRunning: true, ownedGameLeaseId: codyLease.LeaseId);
+                    if (brokerAvailability.RequiresImmediateYield)
+                    {
+                        await InterruptAsync(
+                            session,
+                            job,
+                            claimed.Lease,
+                            partialDestination,
+                            $"Publication yielded to development work: {brokerAvailability.Reason}",
+                            cancellationToken);
+                        return;
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or InvalidOperationException or JsonException or Win32Exception)
+                {
+                    await InterruptAsync(
+                        session,
+                        job,
+                        claimed.Lease,
+                        partialDestination,
+                        $"Publication was canceled because the Cody worker fence could not be renewed: {exception.Message}",
+                        cancellationToken);
+                    return;
+                }
             }
 
             // This accepted progress update is a final fencing check immediately before publication.
@@ -273,7 +389,7 @@ public sealed class WorkerAgent : IDisposable
             catch (Exception) { /* Lease expiration is the fallback. */ }
             throw;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception)
         {
             if (session is not null) await session.StopAsync(cancellationToken);
             if (partialDestination is not null) DeletePartial(partialDestination);
@@ -287,7 +403,7 @@ public sealed class WorkerAgent : IDisposable
 
     private async Task<bool> CompletePreflightAsync(JobLease claimed, CancellationToken cancellationToken)
     {
-        if (configuration.Mode == WorkerMode.DedicatedRenderNode || configuration.PreflightSeconds == 0)
+        if (configuration.Mode != WorkerMode.PersonalDesktop || configuration.PreflightSeconds == 0)
         {
             return true;
         }
@@ -390,6 +506,20 @@ public sealed class WorkerAgent : IDisposable
     {
         try { await Task.Delay(delay, cancellationToken); }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private async Task ReleaseCodyLeaseAsync(CodyWorkerBroker broker, CodyWorkerLease lease)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await broker.ReleaseAsync(lease, timeout.Token);
+            log($"Released Cody worker broker generation {lease.Generation}.");
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or JsonException or Win32Exception or OperationCanceledException)
+        {
+            log($"CRITICAL: Cody worker broker lease {lease.LeaseId} could not be released cleanly: {exception.Message}");
+        }
     }
 
     public void Dispose() => coordinator.Dispose();

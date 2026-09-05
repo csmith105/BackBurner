@@ -14,6 +14,7 @@
 - Validate pause/resume, Stop & Requeue, three-failure terminal behavior, power loss, and stale lease fencing.
 - Inventory real CPU, GPU, memory, encoders, and throughput for every worker.
 - Install and exercise Codex lifecycle hooks on both personal Windows desktops; verify crash-expiry and concurrent-session behavior.
+- Validate shared-NUC broker acquisition, fenced HandBrake launch, 60-second renewal, development-queue preemption, and cleanup using synthetic media.
 
 ## M2: first household deployment
 

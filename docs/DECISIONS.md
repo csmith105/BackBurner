@@ -35,3 +35,7 @@ Use an atomically replaced state document while there is one coordinator and low
 ## 2026-09-05: Explicit host roles and layered activity detection
 
 Configure every worker as a personal desktop, shared game worker, or dedicated render node. A personal desktop requires 15 minutes of input inactivity plus a quiet-machine window and preflight warning. A dedicated render node bypasses those gates. An expiring, per-session inhibit marker is the authoritative Codex signal; Codex/system CPU monitoring is only a fallback because an open desktop app is not evidence that an agent is executing.
+
+## 2026-09-05: Shared NUCs participate in the existing broker
+
+Do not create a BackBurner-specific lock on Cody game-development nodes. Hold both the coordinator job fence and an immediate 60-second `cody-workerctl` fence, run HandBrake inside the broker's systemd scope, poll the development FIFO no less often than every 30 seconds, and release when interactive work appears. A failed immediate acquisition is canceled instead of retaining FIFO priority.

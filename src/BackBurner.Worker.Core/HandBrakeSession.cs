@@ -35,6 +35,11 @@ public sealed partial class HandBrakeSession : IAsyncDisposable
         string partialDestination,
         HandBrakeSettings settings)
     {
+        return Start(CreateProcessStartInfo(executable, HandBrakeArgumentBuilder.Build(source, partialDestination, settings)));
+    }
+
+    public static ProcessStartInfo CreateProcessStartInfo(string executable, IReadOnlyList<string> arguments)
+    {
         var startInfo = new ProcessStartInfo
         {
             FileName = executable,
@@ -44,11 +49,15 @@ public sealed partial class HandBrakeSession : IAsyncDisposable
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        foreach (var argument in HandBrakeArgumentBuilder.Build(source, partialDestination, settings))
+        foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
         }
+        return startInfo;
+    }
 
+    public static HandBrakeSession Start(ProcessStartInfo startInfo)
+    {
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start())
         {

@@ -8,7 +8,7 @@ Read `README.md`, `docs/ARCHITECTURE.md`, `docs/WORKER-CONTRACT.md`, `docs/DECIS
 2. Never expose a partial encode at its final Plex filename. Encode to a `.backburner-partial` path and publish by a same-filesystem atomic rename only after HandBrake succeeds.
 3. Never overwrite an existing destination. Treat that as a terminal conflict requiring a human decision.
 4. Every worker mutation must present both the lease UUID and fencing generation. A stale worker must be rejected even when it still has an old lease ID.
-5. An active, recovering, or quarantined Cody game-worker lease is an absolute BackBurner exclusion. An idle node with a nonempty game-worker FIFO queue is also excluded.
+5. A shared Cody node must use the existing `cody-workerctl` broker—never a parallel lock or direct state-file write. BackBurner gets only an immediate 60-second lease when the development queue is empty, checks that queue at least every 30 seconds, runs HandBrake inside the fenced broker scope, and releases promptly when development work appears.
 6. Encoder failures consume the bounded attempt budget. Human stops, service shutdowns, and coordinator lease interruptions do not.
 7. Job creation copies a preset snapshot. Editing or deleting the named preset must never change an already queued job.
 8. Do not commit credentials, worker API keys, NAS credentials, Plex tokens, machine-local mappings, or real media filenames.
