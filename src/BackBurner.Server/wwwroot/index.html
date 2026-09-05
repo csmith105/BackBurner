@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BackBurner</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">LAN media workers</p>
+      <h1>BackBurner</h1>
+      <p class="lede">Queue the careful work. Let idle machines carry it.</p>
+    </div>
+    <label class="key-field">Admin key <input id="admin-key" type="password" autocomplete="off" placeholder="Development: blank"></label>
+  </header>
+
+  <main>
+    <section class="panel compose">
+      <div class="section-heading">
+        <div><p class="eyebrow">New encoding</p><h2>Build a job</h2></div>
+        <label>Load preset <select id="preset-picker"><option value="">Unsaved settings</option></select></label>
+      </div>
+      <div id="message" role="status" aria-live="polite"></div>
+      <form id="job-form">
+        <div class="grid two">
+          <label>Job name <input id="display-name" required maxlength="200" placeholder="Movie Name — 1080p"></label>
+          <label>Destination library
+            <select id="destination-root">
+              <option value="plex-movies">Movies</option>
+              <option value="plex-series">Shows</option>
+            </select>
+          </label>
+        </div>
+        <label>Source <input id="source-path" required placeholder="incoming:/Movie Name/source.mkv"></label>
+        <label>Final relative path <input id="destination-relative" required placeholder="Movie Name (2026)/Movie Name (2026).mkv"></label>
+
+        <div class="grid four settings">
+          <label>Container <select id="container"><option>mkv</option><option>mp4</option></select></label>
+          <label>Video encoder
+            <select id="video-encoder">
+              <option value="x265">H.265 (CPU)</option>
+              <option value="x264">H.264 (CPU)</option>
+              <option value="nvenc_h265">H.265 (NVIDIA)</option>
+              <option value="qsv_h265">H.265 (Intel)</option>
+              <option value="vce_h265">H.265 (AMD)</option>
+            </select>
+          </label>
+          <label>Constant quality <input id="quality" type="number" min="0" max="51" step="0.5" value="22"></label>
+          <label>Encoder speed <input id="encoder-preset" value="medium"></label>
+          <label>Max width <input id="max-width" type="number" min="1" placeholder="unlimited"></label>
+          <label>Max height <input id="max-height" type="number" min="1" placeholder="unlimited"></label>
+          <label>Audio <select id="audio-encoder"><option value="copy">Passthrough when possible</option><option value="av_aac">AAC</option><option value="av_ac3">AC3</option><option value="eac3">E-AC3</option></select></label>
+          <label>Max attempts <input id="max-attempts" type="number" min="1" max="10" value="3"></label>
+        </div>
+        <div class="check-row">
+          <label><input id="all-audio" type="checkbox" checked> All audio tracks</label>
+          <label><input id="all-subtitles" type="checkbox" checked> All subtitles</label>
+          <label><input id="chapters" type="checkbox" checked> Chapter markers</label>
+        </div>
+        <label>Advanced CLI arguments, one argument per line <textarea id="extra-arguments" rows="3" placeholder="--comb-detect&#10;--decomb"></textarea></label>
+
+        <div class="actions">
+          <button class="primary" type="submit">Queue encoding</button>
+          <button id="save-preset" type="button">Save settings as preset</button>
+          <button id="reset-settings" type="button" class="quiet">Reset settings</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers</h2></div><span id="worker-count" class="badge">0</span></div>
+      <div id="workers" class="cards empty">No workers have checked in.</div>
+    </section>
+
+    <section class="panel wide">
+      <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Jobs</h2></div><button id="refresh" class="quiet">Refresh</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Job</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Last note</th><th></th></tr></thead>
+          <tbody id="jobs"><tr><td colspan="7" class="empty">Nothing queued yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel wide">
+      <div class="section-heading"><div><p class="eyebrow">Audit trail</p><h2>Recent events</h2></div></div>
+      <ol id="events" class="events"><li class="empty">No events yet.</li></ol>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

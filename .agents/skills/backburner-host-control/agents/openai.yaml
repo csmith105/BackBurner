@@ -1,0 +1,4 @@
+interface:
+  display_name: "BackBurner Host Control"
+  short_description: "Keep media jobs from competing with agent work"
+  default_prompt: "Check and control BackBurner availability before running heavy local work."

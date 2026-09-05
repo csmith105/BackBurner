@@ -1,0 +1,55 @@
+{
+  "description": "Keep BackBurner from competing with active Codex workloads.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook" }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook", "timeout": 3 }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook" }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python PATH_TO_REPO/.agents/skills/backburner-host-control/scripts/backburner_inhibit.py hook", "timeout": 3 }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BackBurner.Contracts/BackBurner.Contracts.csproj" />
+    <Project Path="src/BackBurner.Server/BackBurner.Server.csproj" />
+    <Project Path="src/BackBurner.Worker.Core/BackBurner.Worker.Core.csproj" />
+    <Project Path="src/BackBurner.Worker.Cli/BackBurner.Worker.Cli.csproj" />
+    <Project Path="src/BackBurner.Worker.Windows/BackBurner.Worker.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BackBurner.Tests/BackBurner.Tests.csproj" />
+  </Folder>
+</Solution>

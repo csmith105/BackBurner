@@ -1,0 +1,36 @@
+{
+  "coordinatorUrl": "http://127.0.0.1:5080",
+  "workerId": "replace-with-stable-machine-id",
+  "displayName": "Example worker",
+  "workerApiKey": "replace-me",
+  "handBrakePath": "HandBrakeCLI",
+  "mode": "PersonalDesktop",
+  "pollIntervalSeconds": 5,
+  "idleThresholdSeconds": 900,
+  "quietWindowSeconds": 900,
+  "preflightSeconds": 30,
+  "detectWindowsHumanIdle": true,
+  "detectCodexProcessActivity": true,
+  "codexCpuBusyPercent": 1,
+  "systemCpuBusyPercent": 20,
+  "gameWorkerLeaseFile": null,
+  "gameWorkerQueueFile": null,
+  "capabilities": [
+    "handbrake",
+    "encode:x264",
+    "encode:x265"
+  ],
+  "inhibitFiles": [],
+  "inhibitDirectories": [
+    "%LOCALAPPDATA%\\BackBurner\\inhibits"
+  ],
+  "profile": {
+    "gpu": "replace after inventory",
+    "ram": "replace after inventory"
+  },
+  "paths": {
+    "incoming": "C:\\BackBurner-Test\\Incoming",
+    "plex-movies": "C:\\BackBurner-Test\\Movies",
+    "plex-series": "C:\\BackBurner-Test\\Series"
+  }
+}
