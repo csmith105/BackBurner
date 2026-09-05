@@ -87,6 +87,30 @@ public sealed class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Worker_heartbeat_persists_typed_role_and_readiness_time()
+    {
+        var readyAt = DateTimeOffset.UtcNow.AddMinutes(12);
+        await store.HeartbeatAsync(new WorkerHeartbeat
+        {
+            WorkerId = "cody-runner",
+            DisplayName = "Cody runner",
+            Mode = WorkerMode.SharedGameWorker,
+            Availability = WorkerAvailability.HumanActive,
+            ActivityState = WorkerActivityState.IdleCooldown,
+            AvailabilityReason = "Waiting for a stable idle window.",
+            ReadyAt = readyAt,
+            Capabilities = ["handbrake", "encode:x265"]
+        }, CancellationToken.None);
+
+        var worker = (await store.SnapshotAsync(CancellationToken.None)).Workers.Single();
+
+        Assert.Equal(WorkerMode.SharedGameWorker, worker.Mode);
+        Assert.Equal(WorkerAvailability.HumanActive, worker.Availability);
+        Assert.Equal(WorkerActivityState.IdleCooldown, worker.ActivityState);
+        Assert.Equal(readyAt, worker.ReadyAt);
+    }
+
+    [Fact]
     public async Task Nonretryable_validation_error_does_not_consume_encoding_attempt()
     {
         var job = await EnqueueX265();

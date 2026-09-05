@@ -201,6 +201,7 @@ public sealed class StateStore
                 {
                     WorkerId = heartbeat.WorkerId,
                     DisplayName = heartbeat.DisplayName,
+                    Mode = heartbeat.Mode,
                     Availability = heartbeat.Availability
                 };
                 state.Workers.Add(worker);
@@ -208,8 +209,11 @@ public sealed class StateStore
             }
 
             worker.DisplayName = heartbeat.DisplayName;
+            worker.Mode = heartbeat.Mode;
             worker.Availability = heartbeat.Availability;
+            worker.ActivityState = heartbeat.ActivityState;
             worker.AvailabilityReason = heartbeat.AvailabilityReason;
+            worker.ReadyAt = heartbeat.ReadyAt;
             worker.Capabilities = heartbeat.Capabilities.Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
             worker.Profile = heartbeat.Profile;
             worker.LastSeenAt = now;
@@ -583,7 +587,9 @@ public sealed class StateStore
         foreach (var worker in state.Workers.Where(item => item.LastSeenAt < cutoff))
         {
             worker.Availability = WorkerAvailability.Offline;
+            worker.ActivityState = WorkerActivityState.None;
             worker.AvailabilityReason = "Heartbeat overdue.";
+            worker.ReadyAt = null;
         }
     }
 

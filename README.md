@@ -15,6 +15,7 @@ The coordinator is deployed as a LAN-only native service on `plex`; the worker f
 - HandBrakeCLI progress, ETA, pause (`p`), resume (`r`), and graceful quit (`q`) control.
 - Windows idle detection and a notification-area host with Pause and Stop & Requeue actions.
 - Personal-desktop, shared-game-worker, and dedicated-render-node availability modes.
+- Fleet dashboard with typed worker roles, live state/countdowns, active jobs, and CPU/GPU/upscale capability lanes.
 - Explicit Codex inhibit markers, lifecycle-hook templates, and CPU monitoring fallback.
 - Full participation in the Cody game-worker broker: short leases, fenced execution, queue preemption, and prompt release.
 - Logical path mappings so the same job can resolve SMB paths on Windows and mounted paths on Linux.

@@ -5,11 +5,9 @@ namespace BackBurner.Worker.Core;
 
 public static class ToolProbe
 {
-    public static async Task<Dictionary<string, string>> BuildProfileAsync(
-        WorkerConfiguration configuration,
-        CancellationToken cancellationToken)
+    public static Dictionary<string, string> BuildHostProfile(WorkerConfiguration configuration)
     {
-        var profile = new Dictionary<string, string>(configuration.Profile, StringComparer.OrdinalIgnoreCase)
+        return new Dictionary<string, string>(configuration.Profile, StringComparer.OrdinalIgnoreCase)
         {
             ["hostname"] = Environment.MachineName,
             ["os"] = RuntimeInformation.OSDescription,
@@ -17,6 +15,13 @@ public static class ToolProbe
             ["logicalProcessors"] = Environment.ProcessorCount.ToString(),
             ["runtime"] = RuntimeInformation.FrameworkDescription
         };
+    }
+
+    public static async Task<Dictionary<string, string>> BuildProfileAsync(
+        WorkerConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var profile = BuildHostProfile(configuration);
         profile["handBrakeVersion"] = await ReadFirstLineAsync(configuration.HandBrakePath, ["--version"], cancellationToken);
         return profile;
     }

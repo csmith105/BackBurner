@@ -4,7 +4,11 @@ using BackBurner.Contracts;
 
 namespace BackBurner.Worker.Core;
 
-public sealed record AvailabilitySnapshot(WorkerAvailability Availability, string Reason)
+public sealed record AvailabilitySnapshot(
+    WorkerAvailability Availability,
+    string Reason,
+    DateTimeOffset? ReadyAt = null,
+    WorkerActivityState ActivityState = WorkerActivityState.None)
 {
     public bool CanClaim => Availability == WorkerAvailability.Available;
     public bool RequiresImmediateYield => Availability is WorkerAvailability.GameWorkerReserved or WorkerAvailability.Inhibited or WorkerAvailability.Misconfigured;
@@ -85,7 +89,12 @@ public sealed class AvailabilityProbe
             if (idle < TimeSpan.FromSeconds(configuration.IdleThresholdSeconds))
             {
                 lastBusyAt = DateTimeOffset.UtcNow;
-                return new(WorkerAvailability.HumanActive, $"Human input was seen {Math.Floor(idle.TotalSeconds)} seconds ago.");
+                var readyAt = DateTimeOffset.UtcNow.AddSeconds(configuration.IdleThresholdSeconds - idle.TotalSeconds);
+                if (idle < TimeSpan.FromSeconds(configuration.HumanActiveGraceSeconds))
+                {
+                    return new(WorkerAvailability.HumanActive, $"Human input was seen {Math.Floor(idle.TotalSeconds)} seconds ago.", readyAt, WorkerActivityState.HumanActive);
+                }
+                return new(WorkerAvailability.HumanActive, $"No recent input; establishing {configuration.IdleThresholdSeconds / 60m:0.#} minutes of sustained idle time.", readyAt, WorkerActivityState.IdleCooldown);
             }
         }
 
@@ -103,13 +112,13 @@ public sealed class AvailabilityProbe
         if (!activity.IsPrimed)
         {
             lastBusyAt = DateTimeOffset.UtcNow;
-            return new(WorkerAvailability.Inhibited, "Establishing the initial activity baseline.");
+            return new(WorkerAvailability.Inhibited, "Establishing the initial activity baseline.", ActivityState: WorkerActivityState.IdleCooldown);
         }
         var quietFor = DateTimeOffset.UtcNow - lastBusyAt;
         if (!jobRunning && quietFor < TimeSpan.FromSeconds(configuration.QuietWindowSeconds))
         {
             var remaining = TimeSpan.FromSeconds(configuration.QuietWindowSeconds) - quietFor;
-            return new(WorkerAvailability.Inhibited, $"Waiting {Math.Ceiling(remaining.TotalMinutes)} more minute(s) to establish a quiet machine.");
+            return new(WorkerAvailability.Inhibited, "Input is idle; establishing a quiet-machine window.", DateTimeOffset.UtcNow.Add(remaining), WorkerActivityState.IdleCooldown);
         }
 
         return new(WorkerAvailability.Available, "All configured idle and exclusion checks passed.");

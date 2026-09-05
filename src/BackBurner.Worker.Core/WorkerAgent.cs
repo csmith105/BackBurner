@@ -42,6 +42,7 @@ public sealed class WorkerAgent : IDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        profile = ToolProbe.BuildHostProfile(configuration);
         try
         {
             profile = await ToolProbe.BuildProfileAsync(configuration, cancellationToken);
@@ -225,7 +226,8 @@ public sealed class WorkerAgent : IDisposable
                 }
 
                 var current = session.Progress;
-                var reportedAvailability = availability.Availability == WorkerAvailability.HumanActive
+                var reportedAvailability = availability.Availability == WorkerAvailability.HumanActive ||
+                                           availability.ActivityState == WorkerActivityState.IdleCooldown
                     ? WorkerAvailability.Draining
                     : availability.Availability;
                 var reason = reportedAvailability == WorkerAvailability.Draining
@@ -471,8 +473,11 @@ public sealed class WorkerAgent : IDisposable
         {
             WorkerId = configuration.WorkerId,
             DisplayName = configuration.DisplayName,
+            Mode = configuration.Mode,
             Availability = availability.Availability,
+            ActivityState = availability.ActivityState,
             AvailabilityReason = availability.Reason,
+            ReadyAt = availability.ReadyAt,
             Capabilities = configuration.Capabilities,
             Profile = profile,
             ActiveJobId = activeJobId,

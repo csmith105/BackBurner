@@ -82,6 +82,18 @@ public sealed class WorkerCoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Host_profile_is_available_even_when_the_encoder_probe_will_fail()
+    {
+        var configuration = CreateDedicatedConfiguration(Path.Combine(temporaryRoot, "inhibits"));
+
+        var profile = ToolProbe.BuildHostProfile(configuration);
+
+        Assert.Equal(Environment.MachineName, profile["hostname"]);
+        Assert.False(string.IsNullOrWhiteSpace(profile["os"]));
+        Assert.False(string.IsNullOrWhiteSpace(profile["logicalProcessors"]));
+    }
+
     [Theory]
     [InlineData("Progress: {\"State\":\"WORKING\",\"Working\":{\"Progress\":0.42,\"ETASeconds\":90}}", 0.42, 90)]
     [InlineData("Encoding: task 1 of 1, 25.50 % (30.00 fps, avg 29.00 fps, ETA 0h01m02s)", 0.255, 62)]

@@ -292,8 +292,10 @@ function render(snapshot) {
   byId('preset-picker').value = snapshot.presets.some(item => item.id === selected) ? selected : '';
 
   byId('worker-count').textContent = snapshot.workers.length;
-  byId('workers').className = snapshot.workers.length ? 'cards' : 'cards empty';
-  byId('workers').replaceChildren(...(snapshot.workers.length ? snapshot.workers.map(workerCard) : [textElement('div', 'No workers have checked in.')]));
+  byId('capacity').className = 'capacity-grid';
+  byId('capacity').replaceChildren(...capacityCards(snapshot.workers, snapshot.jobs));
+  byId('workers').className = snapshot.workers.length ? 'worker-grid' : 'worker-grid empty';
+  byId('workers').replaceChildren(...(snapshot.workers.length ? snapshot.workers.map(worker => workerCard(worker, snapshot.jobs)) : [textElement('div', 'No workers have checked in.')]));
 
   const batches = snapshot.batches || [];
   byId('batch-count').textContent = batches.length;
@@ -304,14 +306,157 @@ function render(snapshot) {
   byId('events').replaceChildren(...(snapshot.events.length ? snapshot.events.map(eventRow) : [textElement('li', 'No events yet.', 'empty')]));
 }
 
-function workerCard(worker) {
+function workerCard(worker, jobs) {
+  const presentation = workerPresentation(worker, jobs);
+  const activeJob = worker.availability.toLowerCase() !== 'offline' && worker.activeJobId
+    ? jobs.find(job => job.id === worker.activeJobId)
+    : null;
   const card = document.createElement('article');
-  card.className = 'worker';
+  card.className = `worker worker-${presentation.tone}`;
   const head = document.createElement('div');
   head.className = 'worker-head';
-  head.append(textElement('strong', worker.displayName), statusPill(worker.availability));
-  card.append(head, textElement('p', worker.availabilityReason || 'Ready.'), textElement('p', worker.capabilities.join(' · ') || 'No capabilities reported'));
+  head.append(textElement('strong', worker.displayName), statusPill(worker.availability, presentation.label, presentation.tone));
+
+  const identity = document.createElement('div');
+  identity.className = 'worker-identity';
+  identity.append(textElement('span', workerRole(worker)), textElement('span', `Last seen ${formatAge(worker.lastSeenAt)}`));
+
+  const primary = textElement('p', activeJob ? `Encoding “${activeJob.displayName}”` : (worker.availabilityReason || 'Ready.'), 'worker-reason');
+  card.append(head, identity, primary);
+  if (activeJob) {
+    const progress = document.createElement('div');
+    progress.className = 'worker-progress';
+    const bar = document.createElement('progress');
+    bar.max = 1;
+    bar.value = activeJob.progress;
+    progress.append(bar, textElement('span', `${Math.round(activeJob.progress * 100)}%${activeJob.etaSeconds != null ? ` · ${formatDuration(activeJob.etaSeconds)}` : ''}`));
+    card.append(progress);
+    if (worker.availabilityReason) card.append(textElement('p', worker.availabilityReason, 'worker-detail'));
+  }
+  if (worker.readyAt && !activeJob) {
+    const countdown = textElement('p', readyCountdownText(worker.readyAt), 'worker-countdown');
+    countdown.dataset.readyAt = worker.readyAt;
+    card.append(countdown);
+  }
+
+  const capabilities = document.createElement('div');
+  capabilities.className = 'capability-list';
+  for (const capability of worker.capabilities || []) capabilities.append(textElement('span', capabilityLabel(capability), 'capability'));
+  if (!worker.capabilities?.length) capabilities.append(textElement('span', 'No capabilities reported', 'capability capability-muted'));
+  card.append(capabilities);
+
+  const hardware = workerHardware(worker);
+  if (hardware) card.append(textElement('p', hardware, 'worker-detail'));
   return card;
+}
+
+function capacityCards(workers, jobs) {
+  const lanes = [
+    { key: 'cpu', title: 'CPU encoding', description: 'Software H.264 / H.265' },
+    { key: 'gpu', title: 'GPU encoding', description: 'NVENC, Quick Sync, or VCN' },
+    { key: 'upscale', title: 'AI upscaling', description: 'Future open-source model work' }
+  ];
+  return lanes.map(lane => {
+    const capable = workers.filter(worker => workerSupportsLane(worker, lane.key));
+    const ready = capable.filter(worker => worker.availability.toLowerCase() === 'available' && !worker.activeJobId);
+    const working = capable.filter(worker => worker.activeJobId && worker.availability.toLowerCase() !== 'offline');
+    const queued = jobs.filter(job => job.status.toLowerCase() === 'queued' && workClass(job).key === lane.key);
+    const card = document.createElement('article');
+    card.className = 'capacity-card';
+    const head = document.createElement('div');
+    head.className = 'capacity-head';
+    head.append(textElement('strong', lane.title), textElement('span', `${queued.length} queued`, 'capacity-queue'));
+    const numbers = document.createElement('div');
+    numbers.className = 'capacity-numbers';
+    numbers.append(capacityNumber(ready.length, 'ready'), capacityNumber(working.length, 'working'), capacityNumber(capable.length, 'capable'));
+    const roster = document.createElement('div');
+    roster.className = 'capacity-roster';
+    if (capable.length) {
+      for (const worker of capable) {
+        const status = workerPresentation(worker, jobs);
+        roster.append(textElement('span', `${worker.displayName} · ${status.shortLabel}`, `capacity-worker capacity-worker-${status.tone}`));
+      }
+    } else {
+      roster.append(textElement('span', 'No capable workers registered', 'capacity-none'));
+    }
+    card.append(head, textElement('p', lane.description), numbers, roster);
+    return card;
+  });
+}
+
+function capacityNumber(value, label) {
+  const item = document.createElement('span');
+  item.append(textElement('strong', String(value)), document.createTextNode(` ${label}`));
+  return item;
+}
+
+function workerPresentation(worker, jobs) {
+  const availability = worker.availability.toLowerCase();
+  if (availability === 'offline') return { label: 'Offline', shortLabel: 'offline', tone: 'blocked' };
+  const activeJob = worker.activeJobId ? jobs.find(job => job.id === worker.activeJobId) : null;
+  if (activeJob) {
+    if (activeJob.status.toLowerCase() === 'paused') return { label: 'Encoding paused', shortLabel: 'paused', tone: 'working' };
+    if (availability === 'draining') return { label: 'Encoding · draining', shortLabel: 'draining', tone: 'working' };
+    return { label: 'Encoding', shortLabel: 'working', tone: 'working' };
+  }
+  const activityState = (worker.activityState || 'None').toLowerCase();
+  if (activityState === 'idlecooldown') return { label: 'Idle cooldown', shortLabel: 'cooldown', tone: 'cooldown' };
+  if (activityState === 'humanactive') return { label: 'Human activity', shortLabel: 'human active', tone: 'blocked' };
+  const states = {
+    available: { label: 'Available', shortLabel: 'ready', tone: 'ready' },
+    humanactive: { label: 'Human activity', shortLabel: 'human active', tone: 'blocked' },
+    draining: { label: 'Draining', shortLabel: 'draining', tone: 'working' },
+    gameworkerreserved: { label: 'Reserved by agent', shortLabel: 'agent reserved', tone: 'blocked' },
+    inhibited: { label: 'Higher-priority work', shortLabel: 'inhibited', tone: 'blocked' },
+    pausedbyoperator: { label: 'Operator paused', shortLabel: 'paused', tone: 'blocked' },
+    misconfigured: { label: 'Needs configuration', shortLabel: 'misconfigured', tone: 'blocked' },
+    offline: { label: 'Offline', shortLabel: 'offline', tone: 'blocked' }
+  };
+  return states[availability] || { label: splitCase(worker.availability), shortLabel: splitCase(worker.availability).toLowerCase(), tone: 'blocked' };
+}
+
+function workerRole(worker) {
+  const platform = /windows/i.test(worker.profile?.os || '') ? 'Windows' : /linux|ubuntu/i.test(worker.profile?.os || '') ? 'Ubuntu' : '';
+  const roles = {
+    personaldesktop: `${platform || 'Human-operated'} personal workstation`,
+    sharedgameworker: `Cody game-development ${platform || 'Ubuntu'} runner`,
+    dedicatedrendernode: `${platform ? `${platform} ` : ''}dedicated render node`
+  };
+  return roles[(worker.mode || 'PersonalDesktop').toLowerCase()] || splitCase(worker.mode || 'Worker');
+}
+
+function workerHardware(worker) {
+  const profile = worker.profile || {};
+  return [profile.hostname, profile.gpu, profile.ram, profile.logicalProcessors ? `${profile.logicalProcessors} logical CPUs` : null].filter(Boolean).join(' · ');
+}
+
+function capabilityLabel(capability) {
+  const labels = {
+    handbrake: 'HandBrake',
+    'encode:x264': 'CPU H.264',
+    'encode:x265': 'CPU H.265',
+    'encode:nvenc_h265': 'NVIDIA H.265',
+    'encode:qsv_h265': 'Intel H.265',
+    'encode:vcn_h265': 'AMD H.265',
+    'encode:vce_h265': 'AMD H.265'
+  };
+  if (labels[capability.toLowerCase()]) return labels[capability.toLowerCase()];
+  if (capability.toLowerCase().startsWith('upscale:')) return `Upscale · ${capability.split(':').slice(1).join(':')}`;
+  return capability;
+}
+
+function workerSupportsLane(worker, lane) {
+  const capabilities = (worker.capabilities || []).map(item => item.toLowerCase());
+  if (lane === 'upscale') return capabilities.some(item => item.startsWith('upscale:'));
+  if (lane === 'gpu') return capabilities.some(item => /^encode:(nvenc|qsv|vcn|vce)/.test(item));
+  return capabilities.some(item => item === 'encode:x264' || item === 'encode:x265');
+}
+
+function workClass(job) {
+  const capabilities = (job.requiredCapabilities || []).map(item => item.toLowerCase());
+  if (capabilities.some(item => item.startsWith('upscale:'))) return { key: 'upscale', label: 'AI upscale' };
+  if (capabilities.some(item => /^encode:(nvenc|qsv|vcn|vce)/.test(item))) return { key: 'gpu', label: 'GPU encode' };
+  return { key: 'cpu', label: 'CPU encode' };
 }
 
 function batchCard(batch, jobs) {
@@ -333,6 +478,8 @@ function jobRow(job) {
   const row = document.createElement('tr');
   const title = document.createElement('td');
   title.append(textElement('strong', job.displayName), textElement('small', `${job.sourcePath} → ${job.destinationPath}`));
+  const work = workClass(job);
+  const workType = document.createElement('td'); workType.append(textElement('span', work.label, `work-class work-class-${work.key}`));
   const status = document.createElement('td'); status.append(statusPill(job.status));
   const progress = document.createElement('td');
   const bar = document.createElement('progress'); bar.max = 1; bar.value = job.progress;
@@ -347,7 +494,7 @@ function jobRow(job) {
     button.addEventListener('click', () => retryJob(job.id));
     action.append(button);
   }
-  row.append(title, status, progress, attempts, worker, note, action);
+  row.append(title, workType, status, progress, attempts, worker, note, action);
   return row;
 }
 
@@ -359,8 +506,29 @@ function eventRow(item) {
   return row;
 }
 
-function statusPill(value) { return textElement('span', splitCase(value), `status ${value.toLowerCase()}`); }
+function statusPill(value, label = splitCase(value), tone = value.toLowerCase()) { return textElement('span', label, `status ${value.toLowerCase()} status-${tone}`); }
 function splitCase(value) { return value.replace(/([a-z])([A-Z])/g, '$1 $2'); }
+function formatAge(value) {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  return `${Math.floor(seconds / 60)}m ago`;
+}
+function formatCountdown(seconds) {
+  const whole = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(whole / 60);
+  const remainder = whole % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, '0')}s` : `${remainder}s`;
+}
+function readyCountdownText(value) {
+  const seconds = (new Date(value).getTime() - Date.now()) / 1000;
+  return seconds > 0 ? `Earliest available in ${formatCountdown(seconds)}` : 'Idle window complete; waiting for the next worker check.';
+}
+function updateCountdowns() {
+  for (const element of document.querySelectorAll('[data-ready-at]')) {
+    element.textContent = readyCountdownText(element.dataset.readyAt);
+  }
+}
 function formatDuration(seconds) {
   if (seconds < 60) return `${seconds}s left`;
   const minutes = Math.ceil(seconds / 60);
@@ -375,7 +543,7 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unit]}`;
 }
 function textElement(tag, text, className = '') { const element = document.createElement(tag); element.textContent = text; element.className = className; return element; }
-function emptyRow() { const row = document.createElement('tr'); const cell = textElement('td', 'Nothing queued yet.', 'empty'); cell.colSpan = 7; row.append(cell); return row; }
+function emptyRow() { const row = document.createElement('tr'); const cell = textElement('td', 'Nothing queued yet.', 'empty'); cell.colSpan = 8; row.append(cell); return row; }
 
 async function refresh() {
   if (!byId('admin-key').value.trim()) {
@@ -393,3 +561,4 @@ async function refresh() {
 setMode('single');
 refresh();
 setInterval(refresh, 5000);
+setInterval(updateCountdowns, 1000);

@@ -51,3 +51,7 @@ Give the coordinator explicit read-only mappings only for source roots that the 
 ## 2026-09-05: Worker API keys may come from process environment
 
 Allow `BACKBURNER_WORKER_API_KEY` to override the machine-local JSON value at startup. Managed services and supervised development runs can therefore keep the worker credential outside the repository and ordinary configuration file. The environment value is process-scoped and is never reported in worker status or coordinator events.
+
+## 2026-09-05: Typed fleet status with one execution slot per worker
+
+Have workers heartbeat a typed operating mode, structured availability and activity states, optional earliest-ready time, capabilities, profile, and active job ID. Add these as new fields while retaining existing availability enum values so the prior coordinator release can still deserialize state during rollback. The dashboard may derive human-readable role labels, cooldown countdowns, active-job progress, and CPU/GPU/upscale eligibility lanes from those fields without parsing status prose. A worker can appear in every lane it is capable of serving, but it retains one BackBurner execution slot. Do not run a CPU encode and GPU/upscale task concurrently on the same host until representative benchmarks establish explicit CPU, GPU, decoder, memory, thermal, and NAS-I/O resource budgets and the lease model is extended to fence multiple slots safely.

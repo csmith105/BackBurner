@@ -114,12 +114,14 @@
       </form>
     </section>
 
-    <section class="panel">
-      <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers</h2></div><span id="worker-count" class="badge">0</span></div>
-      <div id="workers" class="cards empty">Connect with the admin key to load workers.</div>
+    <section class="panel wide fleet-panel">
+      <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers and capacity</h2></div><span id="worker-count" class="badge">0</span></div>
+      <p class="fleet-note">Capability lanes show eligibility, not simultaneous capacity. A machine may appear in several lanes, but currently runs one BackBurner job at a time.</p>
+      <div id="capacity" class="capacity-grid empty">Connect with the admin key to load capacity.</div>
+      <div id="workers" class="worker-grid empty">Connect with the admin key to load workers.</div>
     </section>
 
-    <section class="panel">
+    <section class="panel wide">
       <div class="section-heading"><div><p class="eyebrow">Collections</p><h2>Batches</h2></div><span id="batch-count" class="badge">0</span></div>
       <div id="batches" class="cards empty">No directory batches yet.</div>
     </section>
@@ -128,8 +130,8 @@
       <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Individual jobs</h2></div><button id="refresh" class="quiet">Refresh</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Job</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Last note</th><th></th></tr></thead>
-          <tbody id="jobs"><tr><td colspan="7" class="empty">Connect with the admin key to load jobs.</td></tr></tbody>
+          <thead><tr><th>Job</th><th>Work class</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Last note</th><th></th></tr></thead>
+          <tbody id="jobs"><tr><td colspan="8" class="empty">Connect with the admin key to load jobs.</td></tr></tbody>
         </table>
       </div>
     </section>

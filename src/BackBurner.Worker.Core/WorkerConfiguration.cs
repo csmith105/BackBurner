@@ -1,14 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BackBurner.Contracts;
 
 namespace BackBurner.Worker.Core;
-
-public enum WorkerMode
-{
-    PersonalDesktop,
-    SharedGameWorker,
-    DedicatedRenderNode
-}
 
 public sealed record WorkerConfiguration
 {
@@ -20,6 +14,7 @@ public sealed record WorkerConfiguration
     public WorkerMode Mode { get; init; } = WorkerMode.PersonalDesktop;
     public int PollIntervalSeconds { get; init; } = 5;
     public int IdleThresholdSeconds { get; init; } = 900;
+    public int HumanActiveGraceSeconds { get; init; } = 30;
     public int QuietWindowSeconds { get; init; } = 900;
     public int PreflightSeconds { get; init; } = 30;
     public bool DetectWindowsHumanIdle { get; init; }
@@ -83,6 +78,10 @@ public sealed record WorkerConfiguration
         if (IdleThresholdSeconds is < 30 or > 86_400)
         {
             throw new InvalidOperationException("idleThresholdSeconds must be between 30 seconds and one day.");
+        }
+        if (HumanActiveGraceSeconds is < 5 or > 300 || HumanActiveGraceSeconds >= IdleThresholdSeconds)
+        {
+            throw new InvalidOperationException("humanActiveGraceSeconds must be between 5 and 300 seconds and shorter than idleThresholdSeconds.");
         }
         if (QuietWindowSeconds is < 0 or > 86_400)
         {

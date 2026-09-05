@@ -47,6 +47,10 @@ Workers have an explicit operating mode:
 - `SharedGameWorker` joins the existing Cody broker only after the development queue is empty. It uses a 60-second fenced lease, launches HandBrake through `cody-workerctl run`, checks the FIFO every worker poll (maximum 30 seconds), and releases promptly when development work appears.
 - `DedicatedRenderNode` bypasses human-idle and ambient-CPU gates, but still honors explicit operator and inhibit controls.
 
+Every heartbeat carries that typed mode, structured availability and activity states, an optional earliest-ready timestamp, capabilities, hardware profile, and active job ID. The dashboard uses the typed fields rather than parsing human-readable status messages. A personal desktop can therefore distinguish current human input from an idle cooldown and show a live countdown; a shared game worker reports a broker reservation as `GameWorkerReserved`; and an active job is joined to the worker record for its name, progress, and ETA.
+
+The dashboard groups queued work and registered workers into CPU encoding, hardware/GPU encoding, and AI-upscaling lanes by capability tags. A worker may appear in multiple lanes because eligibility is set-based. This is not a promise of concurrent execution: the current worker agent has one claim slot and runs at most one BackBurner job at a time. Multi-resource concurrency requires measured CPU, GPU, decoder, memory, thermal, and NAS-I/O budgets before the coordinator gains resource-counted claims.
+
 ## Human return and drain behavior
 
 On a human-interactable Windows host, BackBurner may claim only after the configured input-idle threshold. If input resumes during an encode:

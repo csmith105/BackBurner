@@ -7,6 +7,7 @@
   "mode": "PersonalDesktop",
   "pollIntervalSeconds": 5,
   "idleThresholdSeconds": 900,
+  "humanActiveGraceSeconds": 30,
   "quietWindowSeconds": 900,
   "preflightSeconds": 30,
   "detectWindowsHumanIdle": true,

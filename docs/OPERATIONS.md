@@ -30,7 +30,7 @@ Do not print the value in startup scripts or commit it.
 
 Select the correct `mode`:
 
-- `PersonalDesktop`: human-owned Windows computer; keep the 15-minute idle/quiet defaults initially.
+- `PersonalDesktop`: human-owned Windows computer; keep the 15-minute idle/quiet and 30-second recent-input defaults initially. The dashboard shows recent input as blocked, then a live idle-cooldown countdown.
 - `SharedGameWorker`: Cody game-development node; configure both game-worker state paths.
 - `DedicatedRenderNode`: machine whose sole purpose is rendering/encoding; desktop and ambient-CPU gates are skipped.
 
@@ -89,6 +89,7 @@ Before deployment, exercise this exact sequence with synthetic media: immediate 
 - Select a dedicated NAS staging layout and service identity.
 - Install and verify HandBrakeCLI on each worker.
 - Benchmark Cameron's real presets and establish capability tags from actual `HandBrakeCLI --help` output.
+- Benchmark combined CPU encoding and GPU/upscaling workloads before enabling more than one claim slot on any worker.
 - Configure and verify backup of the coordinator state; add a reverse proxy and TLS before any access beyond the trusted LAN.
 - Package the Windows host and Linux systemd service.
 - Exercise power-loss, coordinator-loss, SMB-loss, and human-return cases using synthetic media before touching the Plex libraries.

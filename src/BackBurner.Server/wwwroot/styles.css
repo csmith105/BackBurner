@@ -82,16 +82,51 @@ button.small { font-size: 11px; padding: 6px 8px; }
 .scan-table th:first-child, .scan-table td:first-child { width: 42px; text-align: center; }
 .scan-table th:last-child, .scan-table td:last-child { width: 110px; }
 .cards { display: grid; gap: 10px; }
-.worker { padding: 13px; border: 1px solid var(--edge); border-radius: 5px; background: var(--input); }
+.fleet-note { color: var(--muted); margin: -8px 0 16px; font-size: 11px; }
+.capacity-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.capacity-card { padding: 13px; border: 1px solid var(--edge); border-radius: 5px; background: #23241f; }
+.capacity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.capacity-card > p { margin: 4px 0 11px; color: var(--comment); font-size: 10px; }
+.capacity-queue { color: var(--yellow); font-size: 10px; white-space: nowrap; }
+.capacity-numbers { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 10px; }
+.capacity-numbers strong { color: var(--ink); font-size: 15px; }
+.capacity-roster { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.capacity-worker, .capacity-none { padding: 3px 7px; border-radius: 999px; background: var(--panel-raised); color: var(--muted); font-size: 9px; }
+.capacity-worker-ready { color: var(--green); }
+.capacity-worker-working { color: var(--blue); }
+.capacity-worker-cooldown { color: var(--orange); }
+.capacity-worker-blocked { color: var(--bad); }
+.worker-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+.worker { position: relative; padding: 14px; border: 1px solid var(--edge); border-left-width: 4px; border-radius: 5px; background: var(--input); }
+.worker-ready { border-left-color: var(--green); }
+.worker-working { border-left-color: var(--blue); }
+.worker-cooldown { border-left-color: var(--orange); }
+.worker-blocked { border-left-color: var(--bad); }
 .worker-head { display: flex; justify-content: space-between; gap: 12px; }
 .worker strong { font-size: 14px; color: var(--blue); }
-.worker p { margin: 5px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.worker p { margin: 7px 0 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.worker-identity { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; color: var(--comment); font-size: 9px; }
+.worker-reason { color: var(--ink) !important; }
+.worker-countdown { color: var(--orange) !important; font-variant-numeric: tabular-nums; }
+.worker-detail { color: var(--comment) !important; }
+.worker-progress { display: flex; align-items: center; gap: 10px; margin-top: 9px; color: var(--blue); font-size: 10px; }
+.worker-progress progress { width: min(220px, 70%); }
+.capability-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.capability { padding: 3px 7px; border: 1px solid var(--edge); border-radius: 3px; color: var(--yellow); font-size: 9px; }
+.capability-muted { color: var(--comment); }
 .batch-card strong { color: var(--purple); }
 .status { display: inline-block; border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; background: #3a3b34; }
 .status.available, .status.succeeded, .status.authenticated { color: var(--green); }
 .status.failed, .status.misconfigured, .status.attention, .status.locked { color: var(--bad); }
 .status.running, .status.leased, .status.paused { color: var(--blue); }
-.status.humanactive, .status.draining, .status.gameworkerreserved, .status.inhibited, .status.queued { color: var(--orange); }
+.status.humanactive, .status.gameworkerreserved, .status.inhibited, .status.pausedbyoperator, .status.offline, .status.status-blocked { color: var(--bad); }
+.status.idlecooldown, .status.queued, .status.status-cooldown { color: var(--orange); }
+.status.draining, .status.status-working { color: var(--blue); }
+.status.status-ready { color: var(--green); }
+.work-class { display: inline-block; padding: 3px 7px; border-radius: 3px; background: var(--panel-raised); color: var(--muted); font-size: 9px; white-space: nowrap; }
+.work-class-cpu { color: var(--yellow); }
+.work-class-gpu { color: var(--blue); }
+.work-class-upscale { color: var(--purple); }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th { color: var(--comment); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; text-align: left; background: #23241f; }
@@ -109,6 +144,7 @@ progress { width: 130px; accent-color: var(--purple); }
   .wide { grid-column: auto; }
   .grid.four { grid-template-columns: repeat(2, 1fr); }
   .scan-line { grid-template-columns: 1fr; }
+  .capacity-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .grid.two, .grid.four { grid-template-columns: 1fr; }

@@ -22,6 +22,20 @@ public enum WorkerAvailability
     Offline
 }
 
+public enum WorkerActivityState
+{
+    None,
+    HumanActive,
+    IdleCooldown
+}
+
+public enum WorkerMode
+{
+    PersonalDesktop,
+    SharedGameWorker,
+    DedicatedRenderNode
+}
+
 public enum AttemptOutcome
 {
     Running,
@@ -169,8 +183,11 @@ public sealed record WorkerHeartbeat
 {
     public required string WorkerId { get; init; }
     public required string DisplayName { get; init; }
+    public WorkerMode Mode { get; init; } = WorkerMode.PersonalDesktop;
     public WorkerAvailability Availability { get; init; }
+    public WorkerActivityState ActivityState { get; init; }
     public string AvailabilityReason { get; init; } = "";
+    public DateTimeOffset? ReadyAt { get; init; }
     public string[] Capabilities { get; init; } = [];
     public Dictionary<string, string> Profile { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public Guid? ActiveJobId { get; init; }
@@ -181,8 +198,11 @@ public sealed record WorkerRecord
 {
     public required string WorkerId { get; init; }
     public required string DisplayName { get; set; }
+    public WorkerMode Mode { get; set; } = WorkerMode.PersonalDesktop;
     public WorkerAvailability Availability { get; set; }
+    public WorkerActivityState ActivityState { get; set; }
     public string AvailabilityReason { get; set; } = "";
+    public DateTimeOffset? ReadyAt { get; set; }
     public string[] Capabilities { get; set; } = [];
     public Dictionary<string, string> Profile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
