@@ -44,9 +44,11 @@ Deployment verification:
 
 The first development worker, `cody-pc-personal`, is running as the interactive
 Windows notification-area host with its `PersonalDesktop` role and host hardware
-profile. It intentionally reports `Misconfigured` because `HandBrakeCLI` is not
-installed on that machine yet, so it cannot claim a job. No job or batch was
-queued and no real media was scanned or changed during the upgrade.
+profile. HandBrakeCLI 1.11.2 has been checksum-verified, installed, and reported
+successfully by the live worker. It remains unavailable while human activity is
+present and becomes eligible only after the configured idle and quiet windows.
+No job or batch was queued and no real media was scanned or changed during the
+upgrade or worker verification.
 
 ### Rollback
 

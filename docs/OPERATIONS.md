@@ -2,7 +2,7 @@
 
 ## Status
 
-The coordinator is deployed as `backburner-coordinator.service` on the Ubuntu host `plex` and is reachable on the trusted LAN at `http://plex:5080`. See `DEPLOYMENTS.md` for its release, paths, verification, and rollback coordinates. It was installed as a separate service without changing or restarting Plex. The first Windows notification-area worker is running on `CODY-PC`, but remains deliberately unavailable until HandBrakeCLI is installed. The production NAS staging workflow is not deployed, and BackBurner has not written to NASquatch or a Plex library.
+The coordinator is deployed as `backburner-coordinator.service` on the Ubuntu host `plex` and is reachable on the trusted LAN at `http://plex:5080`. See `DEPLOYMENTS.md` for its release, paths, verification, and rollback coordinates. It was installed as a separate service without changing or restarting Plex. The first Windows notification-area worker is running on `CODY-PC` with checksum-verified HandBrakeCLI 1.11.2 and is gated by the configured human-idle policy. The production NAS staging workflow is not deployed, and BackBurner has not written to NASquatch or a Plex library.
 
 ## Coordinator development
 
