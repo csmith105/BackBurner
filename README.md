@@ -8,6 +8,7 @@ The coordinator is deployed as a LAN-only native service on `plex`; the worker f
 
 - Durable coordinator state stored by one server process in an atomically replaced JSON file.
 - Named, editable HandBrake presets whose values are copied into each queued job.
+- Read-only coordinator directory scans with unchecked media candidates and atomic batch creation into independently schedulable jobs.
 - Capability-aware leasing with UUID lease IDs and monotonically increasing fencing generations.
 - Three encoding attempts by default, bounded exponential retry delay, and a visible terminal failure.
 - Human or operator interruption returns a job to the queue without consuming its encoding-failure budget.
@@ -54,5 +55,9 @@ Run a worker after copying `config/worker.example.json` to an untracked `worker.
 ```powershell
 dotnet run --project src/BackBurner.Worker.Cli -- worker.local.json
 ```
+
+For deployed workers, prefer supplying the coordinator credential through the
+`BACKBURNER_WORKER_API_KEY` process environment instead of putting it in the
+JSON file.
 
 BackBurner does not scan, rename, move, or encode anything merely by building or starting the coordinator. A worker must be deliberately configured and a job must be submitted.

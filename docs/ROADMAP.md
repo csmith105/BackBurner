@@ -20,7 +20,7 @@
 
 - Deploy the coordinator on `plex` and workers as managed services/login applications.
 - Establish the NAS staging share and least-privilege accounts.
-- Add server-side NAS browsing, richer preset editing/import/export, logs, and job history UI.
+- Extend the initial server-side directory scanner with interactive navigation; add richer preset editing/import/export, logs, and job history UI.
 - Publish to Movies or Series with collision checks and optional Plex library refresh.
 
 ## M3: workflow graph and upscaling

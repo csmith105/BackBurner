@@ -27,6 +27,7 @@ The coordinator is an ASP.NET Core service with a static, no-build browser UI. I
 Coordinator responsibilities:
 
 - Store reusable presets and copy them into new jobs.
+- Enumerate configured source roots read-only and turn an explicitly selected file set into one batch plus independently schedulable child jobs.
 - Validate logical paths and reject dangerous HandBrake argument overrides.
 - Select an eligible queued job in FIFO order.
 - Issue a lease UUID and increment the job's fencing generation.
@@ -69,6 +70,8 @@ On a shared Cody node, BackBurner's coordinator lease and the physical-node brok
 Jobs use logical paths such as `incoming:/source.mkv`, `plex-movies:/Movie Name (2026)/Movie Name (2026).mkv`, and `plex-series:/Show Name (2024)/Season 01/Show Name (2024) - S01E01.mkv`. Worker-local configuration maps each logical root to an SMB UNC path on Windows or a mounted directory on Linux.
 
 Resolution rejects rooted relative portions, `..` traversal, and paths that escape the configured root. The final output must not already exist. HandBrake writes to `<destination>.backburner-partial`; success renames it to the requested destination on the same filesystem. Publishing to Plex is therefore an explicit final step, not an incidental side effect of encoding.
+
+Directory browsing is deliberately asymmetric. The coordinator may receive a read-only mapping for a logical source root so the web UI can scan a directory. A scan uses a bounded video-extension allow-list, skips symbolic links/reparse points, rejects traversal, and returns candidates unchecked. It never queues or modifies anything. Batch submission revalidates that every selected source remains beneath the scanned logical directory and persists the batch plus all child jobs atomically. Every child carries the batch ID but otherwise leases, retries, interrupts, and completes independently.
 
 ## Future operation graph
 

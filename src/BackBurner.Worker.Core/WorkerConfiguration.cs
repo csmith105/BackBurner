@@ -53,6 +53,11 @@ public sealed record WorkerConfiguration
         };
         var configuration = JsonSerializer.Deserialize<WorkerConfiguration>(File.ReadAllText(fullPath), options)
             ?? throw new InvalidOperationException("Worker configuration is empty or invalid.");
+        var environmentKey = Environment.GetEnvironmentVariable("BACKBURNER_WORKER_API_KEY");
+        if (!string.IsNullOrWhiteSpace(environmentKey))
+        {
+            configuration = configuration with { WorkerApiKey = environmentKey };
+        }
         configuration.Validate();
         return configuration;
     }

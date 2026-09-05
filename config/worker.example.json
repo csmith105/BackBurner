@@ -2,7 +2,7 @@
   "coordinatorUrl": "http://127.0.0.1:5080",
   "workerId": "replace-with-stable-machine-id",
   "displayName": "Example worker",
-  "workerApiKey": "replace-me",
+  "workerApiKey": "",
   "handBrakePath": "HandBrakeCLI",
   "mode": "PersonalDesktop",
   "pollIntervalSeconds": 5,

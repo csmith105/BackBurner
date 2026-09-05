@@ -13,28 +13,73 @@
       <h1>BackBurner</h1>
       <p class="lede">Queue the careful work. Let idle machines carry it.</p>
     </div>
-    <label class="key-field">Admin key <input id="admin-key" type="password" autocomplete="off" placeholder="Development: blank"></label>
+    <div class="auth-box">
+      <div class="auth-heading"><span>Coordinator access</span><span id="auth-status" class="status locked">Key required</span></div>
+      <div class="auth-controls">
+        <input id="admin-key" type="password" autocomplete="off" placeholder="Paste admin key">
+        <button id="connect" type="button">Connect</button>
+      </div>
+      <small>The key stays in this browser tab’s session storage.</small>
+    </div>
   </header>
 
   <main>
-    <section class="panel compose">
+    <section class="panel compose wide">
       <div class="section-heading">
-        <div><p class="eyebrow">New encoding</p><h2>Build a job</h2></div>
+        <div><p class="eyebrow">New encoding</p><h2>Build the work</h2></div>
         <label>Load preset <select id="preset-picker"><option value="">Unsaved settings</option></select></label>
       </div>
       <div id="message" role="status" aria-live="polite"></div>
+      <div class="mode-switch" role="group" aria-label="Work type">
+        <button id="single-mode" class="selected" type="button">Single file</button>
+        <button id="batch-mode" type="button">Directory batch</button>
+      </div>
+
       <form id="job-form">
-        <div class="grid two">
-          <label>Job name <input id="display-name" required maxlength="200" placeholder="Movie Name — 1080p"></label>
-          <label>Destination library
-            <select id="destination-root">
-              <option value="plex-movies">Movies</option>
-              <option value="plex-series">Shows</option>
-            </select>
-          </label>
+        <div id="single-fields" class="mode-fields">
+          <div class="grid two">
+            <label>Job name <input id="display-name" required maxlength="200" placeholder="Movie Name — 1080p"></label>
+            <label>Destination library
+              <select id="destination-root">
+                <option value="plex-movies">Movies</option>
+                <option value="plex-series">Shows</option>
+              </select>
+            </label>
+          </div>
+          <label>Source file <input id="source-path" required placeholder="incoming:/Movie Name/source.mkv"></label>
+          <label>Final relative path <input id="destination-relative" required placeholder="Movie Name (2026)/Movie Name (2026).mkv"></label>
         </div>
-        <label>Source <input id="source-path" required placeholder="incoming:/Movie Name/source.mkv"></label>
-        <label>Final relative path <input id="destination-relative" required placeholder="Movie Name (2026)/Movie Name (2026).mkv"></label>
+
+        <div id="batch-fields" class="mode-fields" hidden>
+          <div class="grid two">
+            <label>Batch name <input id="batch-name" maxlength="200" placeholder="Show Name — Season 01"></label>
+            <label>Destination library
+              <select id="batch-destination-root">
+                <option value="plex-series">Shows</option>
+                <option value="plex-movies">Movies</option>
+              </select>
+            </label>
+          </div>
+          <div class="scan-line">
+            <label>NAS source directory <input id="batch-source-directory" placeholder="nas-media:/Show Name/Season 01"></label>
+            <label class="inline-check"><input id="batch-recursive" type="checkbox"> Include subdirectories</label>
+            <button id="scan-directory" type="button">Scan directory</button>
+          </div>
+          <label>Final destination directory <input id="batch-destination-directory" placeholder="Show Name (2026)/Season 01"></label>
+          <div id="scan-result" class="scan-result empty-scan">Scan a directory to find video-file candidates. Nothing is selected automatically.</div>
+          <div id="scan-selection" class="selection-toolbar" hidden>
+            <span id="scan-count">0 files</span>
+            <span class="spacer"></span>
+            <button id="select-all" type="button" class="quiet small">Select all</button>
+            <button id="select-none" type="button" class="quiet small">Select none</button>
+          </div>
+          <div id="scan-table-wrap" class="table-wrap scan-table" hidden>
+            <table>
+              <thead><tr><th></th><th>Candidate file</th><th>Size</th></tr></thead>
+              <tbody id="scanned-files"></tbody>
+            </table>
+          </div>
+        </div>
 
         <div class="grid four settings">
           <label>Container <select id="container"><option>mkv</option><option>mp4</option></select></label>
@@ -62,7 +107,7 @@
         <label>Advanced CLI arguments, one argument per line <textarea id="extra-arguments" rows="3" placeholder="--comb-detect&#10;--decomb"></textarea></label>
 
         <div class="actions">
-          <button class="primary" type="submit">Queue encoding</button>
+          <button id="queue-work" class="primary" type="submit">Queue encoding</button>
           <button id="save-preset" type="button">Save settings as preset</button>
           <button id="reset-settings" type="button" class="quiet">Reset settings</button>
         </div>
@@ -71,22 +116,27 @@
 
     <section class="panel">
       <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers</h2></div><span id="worker-count" class="badge">0</span></div>
-      <div id="workers" class="cards empty">No workers have checked in.</div>
+      <div id="workers" class="cards empty">Connect with the admin key to load workers.</div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading"><div><p class="eyebrow">Collections</p><h2>Batches</h2></div><span id="batch-count" class="badge">0</span></div>
+      <div id="batches" class="cards empty">No directory batches yet.</div>
     </section>
 
     <section class="panel wide">
-      <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Jobs</h2></div><button id="refresh" class="quiet">Refresh</button></div>
+      <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Individual jobs</h2></div><button id="refresh" class="quiet">Refresh</button></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Job</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Last note</th><th></th></tr></thead>
-          <tbody id="jobs"><tr><td colspan="7" class="empty">Nothing queued yet.</td></tr></tbody>
+          <tbody id="jobs"><tr><td colspan="7" class="empty">Connect with the admin key to load jobs.</td></tr></tbody>
         </table>
       </div>
     </section>
 
     <section class="panel wide">
       <div class="section-heading"><div><p class="eyebrow">Audit trail</p><h2>Recent events</h2></div></div>
-      <ol id="events" class="events"><li class="empty">No events yet.</li></ol>
+      <ol id="events" class="events"><li class="empty">Connect with the admin key to load events.</li></ol>
     </section>
   </main>
   <script src="/app.js" defer></script>

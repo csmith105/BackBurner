@@ -43,3 +43,11 @@ Do not create a BackBurner-specific lock on Cody game-development nodes. Hold bo
 ## 2026-09-05: Native versioned systemd deployment for the coordinator
 
 Run the LAN-only coordinator beside Plex as an independent native Linux service rather than introducing a container runtime solely for BackBurner. Publish a self-contained `linux-x64` application, install immutable versioned releases under `/opt/backburner/releases`, and select the active version through `/opt/backburner/current`. Keep workflow state under `/var/lib/backburner` and deployment secrets under `/etc/backburner`, outside every release. The BackBurner unit must not modify, depend on, restart, or share an identity with the Plex unit. This layout keeps deployment small and makes application rollback a symlink change without rolling back or deleting queue state.
+
+## 2026-09-05: Read-only source scans produce atomic batches of ordinary jobs
+
+Give the coordinator explicit read-only mappings only for source roots that the web UI may scan. Scanning is bounded, skips links, filters by supported media extensions, and returns every candidate unchecked; it never probes, queues, renames, or writes media. A submitted selection becomes one durable batch record and multiple ordinary jobs in a single state transition. Workers schedule those child jobs independently, so one episode can retry or fail without reserving a worker for the rest of the season. Revalidate path containment and destination uniqueness when the batch is submitted rather than trusting the earlier scan response.
+
+## 2026-09-05: Worker API keys may come from process environment
+
+Allow `BACKBURNER_WORKER_API_KEY` to override the machine-local JSON value at startup. Managed services and supervised development runs can therefore keep the worker credential outside the repository and ordinary configuration file. The environment value is process-scoped and is never reported in worker status or coordinator events.

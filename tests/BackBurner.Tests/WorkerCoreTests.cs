@@ -52,6 +52,36 @@ public sealed class WorkerCoreTests : IDisposable
         Assert.Equal("--json", arguments[0]);
     }
 
+    [Fact]
+    public void Worker_api_key_can_be_supplied_without_writing_it_to_the_configuration_file()
+    {
+        Directory.CreateDirectory(temporaryRoot);
+        var configurationPath = Path.Combine(temporaryRoot, "worker.json");
+        File.WriteAllText(configurationPath, JsonSerializer.Serialize(new WorkerConfiguration
+        {
+            CoordinatorUrl = "http://localhost:5080",
+            WorkerId = "environment-key-worker",
+            DisplayName = "Environment key worker",
+            WorkerApiKey = "file-value",
+            Mode = WorkerMode.DedicatedRenderNode,
+            Capabilities = ["handbrake"],
+            Paths = new Dictionary<string, string> { ["incoming"] = temporaryRoot }
+        }));
+        var previous = Environment.GetEnvironmentVariable("BACKBURNER_WORKER_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("BACKBURNER_WORKER_API_KEY", "environment-value");
+
+            var loaded = WorkerConfiguration.Load(configurationPath);
+
+            Assert.Equal("environment-value", loaded.WorkerApiKey);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BACKBURNER_WORKER_API_KEY", previous);
+        }
+    }
+
     [Theory]
     [InlineData("Progress: {\"State\":\"WORKING\",\"Working\":{\"Progress\":0.42,\"ETASeconds\":90}}", 0.42, 90)]
     [InlineData("Encoding: task 1 of 1, 25.50 % (30.00 fps, avg 29.00 fps, ETA 0h01m02s)", 0.255, 62)]

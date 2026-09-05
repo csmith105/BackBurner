@@ -24,6 +24,10 @@ The prototype web UI sends the admin key from browser session storage. This is a
 
 Copy `config/worker.example.json` to `worker.local.json`; that filename is ignored by Git. Configure a stable worker ID, the coordinator URL and key, HandBrakeCLI path, exact capabilities, and platform-specific logical roots.
 
+Prefer leaving `workerApiKey` empty in the local JSON and supplying
+`BACKBURNER_WORKER_API_KEY` through the process environment or service manager.
+Do not print the value in startup scripts or commit it.
+
 Select the correct `mode`:
 
 - `PersonalDesktop`: human-owned Windows computer; keep the 15-minute idle/quiet defaults initially.
@@ -43,6 +47,16 @@ Windows mapping example:
 ```
 
 Linux should mount the same SMB shares persistently and map them to paths such as `/mnt/nasquatch/media/Plex Movies`. Do not embed SMB credentials in this repository or worker JSON; use the OS credential mechanism and a least-privilege service account.
+
+## Coordinator source scanning
+
+The directory-batch UI can see only logical source roots explicitly configured under `BackBurner:SourceRoots`. In a systemd environment file, a read-only NAS mapping resembles:
+
+```text
+BackBurner__SourceRoots__nas-media=/volume1/Plex
+```
+
+The coordinator account needs read and directory-traversal permission, never write permission, on that mount. Each worker that may claim those jobs must map the same `nas-media` logical root to its local SMB or mounted representation. A scan recognizes a bounded set of common video extensions and is a candidate listing, not a media probe. Results start unchecked and queue nothing until the operator submits a selection. `BackBurner__MaximumScanFiles` defaults to 5,000 and may be lowered for a particularly large tree.
 
 ## Windows interaction
 

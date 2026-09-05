@@ -109,6 +109,67 @@ public sealed class StateStoreTests : IDisposable
         Assert.Equal(AttemptOutcome.NonRetryableFailure, failed.Attempts.Single().Outcome);
     }
 
+    [Fact]
+    public async Task Batch_enqueues_independent_jobs_with_one_batch_identity_and_snapshot()
+    {
+        var batch = await store.EnqueueBatchAsync(new CreateBatchRequest
+        {
+            DisplayName = "Example season",
+            SourceDirectory = "nas-media:/Example/Season 01",
+            Settings = new HandBrakeSettings { VideoEncoder = "x265", Quality = 21 },
+            MaxAttempts = 3,
+            Items =
+            [
+                new BatchItemRequest
+                {
+                    DisplayName = "Episode 01",
+                    SourcePath = "nas-media:/Example/Season 01/Episode 01.mkv",
+                    DestinationPath = "plex-series:/Example (2026)/Season 01/Episode 01.mkv"
+                },
+                new BatchItemRequest
+                {
+                    DisplayName = "Episode 02",
+                    SourcePath = "nas-media:/Example/Season 01/Episode 02.mkv",
+                    DestinationPath = "plex-series:/Example (2026)/Season 01/Episode 02.mkv"
+                }
+            ]
+        }, CancellationToken.None);
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+
+        Assert.Equal(batch.Id, snapshot.Batches.Single().Id);
+        Assert.Equal(2, batch.JobIds.Length);
+        Assert.All(snapshot.Jobs, job => Assert.Equal(batch.Id, job.BatchId));
+        Assert.All(snapshot.Jobs, job => Assert.Equal(21, job.Settings.Quality));
+        Assert.Contains(snapshot.Events, item => item.Type == "batch.queued");
+    }
+
+    [Fact]
+    public async Task Batch_rejects_a_source_outside_its_scanned_directory_without_queueing_anything()
+    {
+        var request = new CreateBatchRequest
+        {
+            DisplayName = "Unsafe batch",
+            SourceDirectory = "nas-media:/Example/Season 01",
+            Settings = new HandBrakeSettings { VideoEncoder = "x265" },
+            Items =
+            [
+                new BatchItemRequest
+                {
+                    DisplayName = "Outside",
+                    SourcePath = "nas-media:/Different Show/Episode.mkv",
+                    DestinationPath = "plex-series:/Example/Episode.mkv"
+                }
+            ]
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.EnqueueBatchAsync(request, CancellationToken.None));
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+        Assert.Empty(snapshot.Batches);
+        Assert.Empty(snapshot.Jobs);
+    }
+
     [Theory]
     [InlineData("--output=stolen.mkv")]
     [InlineData("--input=other.mkv")]

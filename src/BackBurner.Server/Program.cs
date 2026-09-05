@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<CoordinatorOptions>(builder.Configuration.GetSection("BackBurner"));
 builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddSingleton<StateStore>();
+builder.Services.AddSingleton<SourceBrowser>();
 builder.Services.AddHostedService<LeaseExpiryService>();
 
 var app = builder.Build();
@@ -70,6 +71,28 @@ admin.MapPost("/jobs", async (CreateJobRequest request, StateStore store, Cancel
         return Results.Ok(await store.EnqueueAsync(request, token));
     }
     catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+admin.MapPost("/batches", async (CreateBatchRequest request, StateStore store, CancellationToken token) =>
+{
+    try
+    {
+        return Results.Ok(await store.EnqueueBatchAsync(request, token));
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+admin.MapPost("/source/scan", (DirectoryScanRequest request, SourceBrowser browser) =>
+{
+    try
+    {
+        return Results.Ok(browser.Scan(request));
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
     {
         return Results.BadRequest(new ApiError(exception.Message));
     }

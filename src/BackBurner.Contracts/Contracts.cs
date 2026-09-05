@@ -81,6 +81,48 @@ public sealed record CreateJobRequest
     public string SubmittedBy { get; init; } = "web";
 }
 
+public sealed record BatchItemRequest
+{
+    public required string DisplayName { get; init; }
+    public required string SourcePath { get; init; }
+    public required string DestinationPath { get; init; }
+}
+
+public sealed record CreateBatchRequest
+{
+    public required string DisplayName { get; init; }
+    public required string SourceDirectory { get; init; }
+    public string? PresetName { get; init; }
+    public required HandBrakeSettings Settings { get; init; }
+    public int MaxAttempts { get; init; } = 3;
+    public string SubmittedBy { get; init; } = "web";
+    public required BatchItemRequest[] Items { get; init; }
+}
+
+public sealed record BatchRecord
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string DisplayName { get; init; }
+    public required string SourceDirectory { get; init; }
+    public string? PresetName { get; init; }
+    public string SubmittedBy { get; init; } = "web";
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+    public required Guid[] JobIds { get; init; }
+}
+
+public sealed record DirectoryScanRequest(string DirectoryPath, bool Recursive = false);
+
+public sealed record ScannedMediaFile(
+    string LogicalPath,
+    string RelativePath,
+    string FileName,
+    long SizeBytes);
+
+public sealed record DirectoryScanResult(
+    string DirectoryPath,
+    IReadOnlyList<ScannedMediaFile> Files,
+    bool Truncated);
+
 public sealed record LeaseProof(Guid LeaseId, long Generation);
 
 public sealed record JobAttempt
@@ -104,6 +146,7 @@ public sealed record JobRecord
     public string? PresetName { get; init; }
     public required HandBrakeSettings Settings { get; init; }
     public required string[] RequiredCapabilities { get; init; }
+    public Guid? BatchId { get; init; }
     public string SubmittedBy { get; init; } = "web";
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public JobStatus Status { get; set; } = JobStatus.Queued;
@@ -195,6 +238,7 @@ public sealed record CoordinatorEvent
 
 public sealed record DashboardSnapshot(
     IReadOnlyList<JobRecord> Jobs,
+    IReadOnlyList<BatchRecord> Batches,
     IReadOnlyList<PresetRecord> Presets,
     IReadOnlyList<WorkerRecord> Workers,
     IReadOnlyList<CoordinatorEvent> Events);

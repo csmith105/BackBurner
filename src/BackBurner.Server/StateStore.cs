@@ -34,6 +34,7 @@ public sealed class StateStore
             MarkOfflineWorkers();
             return Clone(new DashboardSnapshot(
                 state.Jobs.OrderByDescending(job => job.CreatedAt).ToArray(),
+                state.Batches.OrderByDescending(batch => batch.CreatedAt).ToArray(),
                 state.Presets.OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
                 state.Workers.OrderBy(worker => worker.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray(),
                 state.Events.OrderByDescending(item => item.At).Take(200).ToArray()));
@@ -132,6 +133,49 @@ public sealed class StateStore
             AddEvent("job.queued", $"Queued '{job.DisplayName}' with a {job.MaxAttempts}-attempt limit.", job.Id);
             await PersistAsync(cancellationToken);
             return Clone(job);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<BatchRecord> EnqueueBatchAsync(CreateBatchRequest request, CancellationToken cancellationToken)
+    {
+        ValidateBatch(request);
+        var requiredCapabilities = RequiredCapabilities(request.Settings);
+
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var batchId = Guid.NewGuid();
+            var jobs = request.Items.Select(item => new JobRecord
+            {
+                DisplayName = item.DisplayName.Trim(),
+                SourcePath = item.SourcePath.Trim(),
+                DestinationPath = item.DestinationPath.Trim(),
+                PresetName = string.IsNullOrWhiteSpace(request.PresetName) ? null : request.PresetName.Trim(),
+                Settings = Clone(request.Settings),
+                RequiredCapabilities = requiredCapabilities,
+                BatchId = batchId,
+                MaxAttempts = request.MaxAttempts,
+                SubmittedBy = request.SubmittedBy.Trim()
+            }).ToArray();
+            var batch = new BatchRecord
+            {
+                Id = batchId,
+                DisplayName = request.DisplayName.Trim(),
+                SourceDirectory = request.SourceDirectory.Trim(),
+                PresetName = string.IsNullOrWhiteSpace(request.PresetName) ? null : request.PresetName.Trim(),
+                SubmittedBy = request.SubmittedBy.Trim(),
+                JobIds = jobs.Select(job => job.Id).ToArray()
+            };
+
+            state.Jobs.AddRange(jobs);
+            state.Batches.Add(batch);
+            AddEvent("batch.queued", $"Queued batch '{batch.DisplayName}' with {jobs.Length} independently schedulable files.");
+            await PersistAsync(cancellationToken);
+            return Clone(batch);
         }
         finally
         {
@@ -606,6 +650,82 @@ public sealed class StateStore
             throw new ArgumentException("Max attempts must be between 1 and 10.");
         }
         ValidateSettings(request.Settings);
+    }
+
+    private static void ValidateBatch(CreateBatchRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length > 200)
+        {
+            throw new ArgumentException("Batch display name must contain 1-200 characters.");
+        }
+        ValidateLogicalDirectory(request.SourceDirectory);
+        if (request.Items is null || request.Items.Length is < 1 or > 5_000)
+        {
+            throw new ArgumentException("A batch must contain between 1 and 5,000 selected files.");
+        }
+        if (request.MaxAttempts is < 1 or > 10)
+        {
+            throw new ArgumentException("Max attempts must be between 1 and 10.");
+        }
+        ValidateSettings(request.Settings);
+
+        var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in request.Items)
+        {
+            if (string.IsNullOrWhiteSpace(item.DisplayName) || item.DisplayName.Trim().Length > 200)
+            {
+                throw new ArgumentException("Every batch item display name must contain 1-200 characters.");
+            }
+            ValidateLogicalPath(item.SourcePath, allowAnyRoot: true);
+            ValidateLogicalPath(item.DestinationPath, allowAnyRoot: false);
+            if (!IsWithinLogicalDirectory(request.SourceDirectory, item.SourcePath))
+            {
+                throw new ArgumentException($"Batch source '{item.SourcePath}' is outside the scanned directory.");
+            }
+            if (!sources.Add(item.SourcePath.Trim()))
+            {
+                throw new ArgumentException($"Batch source '{item.SourcePath}' was selected more than once.");
+            }
+            if (!destinations.Add(item.DestinationPath.Trim()))
+            {
+                throw new ArgumentException($"Multiple batch items target '{item.DestinationPath}'.");
+            }
+            if (string.Equals(item.SourcePath.Trim(), item.DestinationPath.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Batch source and destination paths must differ.");
+            }
+        }
+    }
+
+    private static void ValidateLogicalDirectory(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Logical directory is required.");
+        }
+        var separator = value.IndexOf(":/", StringComparison.Ordinal);
+        if (separator < 1 || separator > 50)
+        {
+            throw new ArgumentException($"'{value}' is not a logical directory such as incoming:/Season 01.");
+        }
+        var root = value[..separator];
+        if (root.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '-')))
+        {
+            throw new ArgumentException($"Logical root '{root}' contains unsupported characters.");
+        }
+        var parts = value[(separator + 2)..].Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Any(part => part is "." or ".."))
+        {
+            throw new ArgumentException("Logical directories may not contain traversal segments.");
+        }
+    }
+
+    private static bool IsWithinLogicalDirectory(string directory, string file)
+    {
+        var normalizedDirectory = directory.Trim().Replace('\\', '/').TrimEnd('/');
+        var normalizedFile = file.Trim().Replace('\\', '/');
+        return normalizedFile.StartsWith($"{normalizedDirectory}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateLogicalPath(string value, bool allowAnyRoot)

@@ -37,6 +37,7 @@ release directory. Do not build or install the SDK on the Plex server.
 4. Point `/opt/backburner/current` at that release.
 5. Create `/etc/backburner/server.env` from `server.env.example`, generate two
    independent keys, and set it to `root:root` mode `0600`.
+   Configure only source-root paths the coordinator can read without writing.
 6. Install `backburner-coordinator.service`, run `systemctl daemon-reload`, and
    enable and start only that unit.
 7. Verify `/api/health`, an authenticated `/api/admin/snapshot`, state-file
