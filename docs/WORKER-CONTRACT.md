@@ -30,13 +30,15 @@ Retries always begin from a clean partial output. HandBrakeCLI cannot safely res
 
 ## Availability
 
-A personal Windows desktop is claimable only when human-input idle time exceeds the configured threshold, ambient system and Codex CPU remain quiet for the configured window, and no explicit inhibit applies. Defaults are 15 minutes idle, 15 minutes quiet, a 30-second recent-input window, and a 30-second preflight warning. The structured `activityState` distinguishes `HumanActive` from `IdleCooldown`; the latter means input has stopped but an idle or quiet-machine timer has not matured. Its heartbeat includes the earliest known `readyAt` time for a dashboard countdown. That time is the next possible transition, not a guarantee if CPU or higher-priority work becomes active. Human activity while running changes the worker to `draining`; it does not silently kill the current encode.
+A personal Windows desktop is claimable only when human-input idle time exceeds the configured threshold, ambient system and Codex CPU remain quiet for the configured window, and no explicit inhibit applies. Defaults are 15 minutes idle, 15 minutes quiet, a 30-second recent-input window, and a 30-second preflight warning. The structured `activityState` distinguishes `HumanActive` from `IdleCooldown`; the latter means input has stopped but an idle or quiet-machine timer has not matured. The additive `blockingCategory` distinguishes human activity, idle cooldown, active agent work, agent reservation, ambient system load, operator pause, and configuration trouble without changing the rollback-sensitive availability enum. Its heartbeat includes the earliest known `readyAt` time for a dashboard countdown. That time is the next possible transition, not a guarantee if CPU or higher-priority work becomes active. Human activity while running changes the worker to `draining`; it does not silently kill the current encode.
 
 An active explicit inhibit is stronger than screen-idle state and forces an immediate safe yield. BackBurner stops the subprocess, deletes only its partial output, and returns the job to the queue without charging an encoding failure. Expired markers do not block work; malformed or unreadable markers block conservatively.
 
 A dedicated render node bypasses desktop and CPU quiet checks. A shared game worker relies on the game-worker lease/queue exclusion instead of human activity. Both modes continue to honor explicit inhibit markers and the local operator pause.
 
 Every heartbeat identifies the worker as `PersonalDesktop`, `SharedGameWorker`, or `DedicatedRenderNode`. Dashboard labels and policy must use this typed mode rather than infer ownership from a hostname or free-form profile field. An active job ID means the worker's one execution slot is occupied even if it is otherwise healthy.
+
+The coordinator derives historical activity intervals from `blockingCategory`, availability, active job, and required capability tags. Workers do not submit or edit history records directly. Repeated identical heartbeats extend one open interval; they must not create one record per heartbeat.
 
 A Cody game-development worker is excluded when either condition is true:
 

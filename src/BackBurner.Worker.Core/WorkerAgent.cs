@@ -60,7 +60,7 @@ public sealed class WorkerAgent : IDisposable
             {
                 if (startupError is not null)
                 {
-                    var unavailable = new AvailabilitySnapshot(WorkerAvailability.Misconfigured, startupError);
+                    var unavailable = new AvailabilitySnapshot(WorkerAvailability.Misconfigured, startupError, BlockingCategory: WorkerBlockingCategory.Configuration);
                     runtimeStatus.Update(new(unavailable.Availability, unavailable.Reason, null, 0, null, false));
                     await coordinator.HeartbeatAsync(CreateHeartbeat(unavailable), cancellationToken);
                 }
@@ -248,7 +248,14 @@ public sealed class WorkerAgent : IDisposable
                 try
                 {
                     await coordinator.HeartbeatAsync(CreateHeartbeat(
-                        new AvailabilitySnapshot(reportedAvailability, reason), job.Id, claimed.Lease), cancellationToken);
+                        new AvailabilitySnapshot(
+                            reportedAvailability,
+                            reason,
+                            availability.ReadyAt,
+                            availability.ActivityState,
+                            availability.BlockingCategory),
+                        job.Id,
+                        claimed.Lease), cancellationToken);
                     var accepted = await coordinator.ProgressAsync(job.Id, CreateProgress(
                         claimed.Lease, current.Fraction, current.EtaSeconds, session.IsPaused), cancellationToken);
                     if (!accepted)
@@ -476,6 +483,7 @@ public sealed class WorkerAgent : IDisposable
             Mode = configuration.Mode,
             Availability = availability.Availability,
             ActivityState = availability.ActivityState,
+            BlockingCategory = availability.BlockingCategory,
             AvailabilityReason = availability.Reason,
             ReadyAt = availability.ReadyAt,
             Capabilities = configuration.Capabilities,

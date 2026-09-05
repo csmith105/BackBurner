@@ -8,6 +8,7 @@ namespace BackBurner.Server;
 public sealed class StateStore
 {
     private const int MaximumEvents = 1_000;
+    private const int MaximumSnapshotActivities = 5_000;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -31,13 +32,18 @@ public sealed class StateStore
         await gate.WaitAsync(cancellationToken);
         try
         {
-            MarkOfflineWorkers();
+            if (MarkOfflineWorkers())
+            {
+                await PersistAsync(cancellationToken);
+            }
             return Clone(new DashboardSnapshot(
                 state.Jobs.OrderByDescending(job => job.CreatedAt).ToArray(),
                 state.Batches.OrderByDescending(batch => batch.CreatedAt).ToArray(),
                 state.Presets.OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
                 state.Workers.OrderBy(worker => worker.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray(),
-                state.Events.OrderByDescending(item => item.At).Take(200).ToArray()));
+                state.Events.OrderByDescending(item => item.At).Take(200).ToArray(),
+                state.Identities.OrderBy(identity => identity.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray(),
+                state.WorkerActivities.OrderByDescending(item => item.StartedAt).Take(MaximumSnapshotActivities).ToArray()));
         }
         finally
         {
@@ -110,6 +116,70 @@ public sealed class StateStore
         }
     }
 
+    public async Task<UserIdentityRecord> CreateIdentityAsync(CreateIdentityRequest request, CancellationToken cancellationToken)
+    {
+        var displayName = request.DisplayName?.Trim() ?? "";
+        if (displayName.Length is < 1 or > 60)
+        {
+            throw new ArgumentException("Identity name must contain 1-60 characters.");
+        }
+
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var existing = state.Identities.FirstOrDefault(item =>
+                string.Equals(item.DisplayName, displayName, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null)
+            {
+                return Clone(existing);
+            }
+
+            var identity = new UserIdentityRecord { DisplayName = displayName };
+            state.Identities.Add(identity);
+            AddEvent("identity.created", $"Created local identity '{identity.DisplayName}'.", identityId: identity.Id);
+            await PersistAsync(cancellationToken);
+            return Clone(identity);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<bool> SetWorkerOwnerAsync(string workerId, SetWorkerOwnerRequest request, CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var worker = state.Workers.FirstOrDefault(item => item.WorkerId == workerId);
+            if (worker is null)
+            {
+                return false;
+            }
+            UserIdentityRecord? identity = null;
+            if (request.IdentityId is not null)
+            {
+                identity = state.Identities.FirstOrDefault(item => item.Id == request.IdentityId)
+                    ?? throw new ArgumentException("The selected identity no longer exists.");
+            }
+
+            worker.OwnerIdentityId = identity?.Id;
+            AddEvent(
+                "worker.owner_changed",
+                identity is null
+                    ? $"Cleared the owner of worker '{worker.DisplayName}'."
+                    : $"Assigned worker '{worker.DisplayName}' to '{identity.DisplayName}'.",
+                workerId: worker.WorkerId,
+                identityId: identity?.Id);
+            await PersistAsync(cancellationToken);
+            return true;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async Task<JobRecord> EnqueueAsync(CreateJobRequest request, CancellationToken cancellationToken)
     {
         ValidateJob(request);
@@ -118,6 +188,7 @@ public sealed class StateStore
         await gate.WaitAsync(cancellationToken);
         try
         {
+            var identity = ResolveIdentity(request.IdentityId);
             var job = new JobRecord
             {
                 DisplayName = request.DisplayName.Trim(),
@@ -127,10 +198,11 @@ public sealed class StateStore
                 Settings = request.Settings,
                 RequiredCapabilities = requiredCapabilities,
                 MaxAttempts = request.MaxAttempts,
-                SubmittedBy = request.SubmittedBy.Trim()
+                SubmittedBy = identity?.DisplayName ?? NormalizeSubmitter(request.SubmittedBy),
+                IdentityId = identity?.Id
             };
             state.Jobs.Add(job);
-            AddEvent("job.queued", $"Queued '{job.DisplayName}' with a {job.MaxAttempts}-attempt limit.", job.Id);
+            AddEvent("job.queued", $"Queued '{job.DisplayName}' with a {job.MaxAttempts}-attempt limit.", job.Id, identityId: job.IdentityId);
             await PersistAsync(cancellationToken);
             return Clone(job);
         }
@@ -148,6 +220,7 @@ public sealed class StateStore
         await gate.WaitAsync(cancellationToken);
         try
         {
+            var identity = ResolveIdentity(request.IdentityId);
             var batchId = Guid.NewGuid();
             var jobs = request.Items.Select(item => new JobRecord
             {
@@ -159,7 +232,8 @@ public sealed class StateStore
                 RequiredCapabilities = requiredCapabilities,
                 BatchId = batchId,
                 MaxAttempts = request.MaxAttempts,
-                SubmittedBy = request.SubmittedBy.Trim()
+                SubmittedBy = identity?.DisplayName ?? NormalizeSubmitter(request.SubmittedBy),
+                IdentityId = identity?.Id
             }).ToArray();
             var batch = new BatchRecord
             {
@@ -167,13 +241,14 @@ public sealed class StateStore
                 DisplayName = request.DisplayName.Trim(),
                 SourceDirectory = request.SourceDirectory.Trim(),
                 PresetName = string.IsNullOrWhiteSpace(request.PresetName) ? null : request.PresetName.Trim(),
-                SubmittedBy = request.SubmittedBy.Trim(),
+                SubmittedBy = identity?.DisplayName ?? NormalizeSubmitter(request.SubmittedBy),
+                IdentityId = identity?.Id,
                 JobIds = jobs.Select(job => job.Id).ToArray()
             };
 
             state.Jobs.AddRange(jobs);
             state.Batches.Add(batch);
-            AddEvent("batch.queued", $"Queued batch '{batch.DisplayName}' with {jobs.Length} independently schedulable files.");
+            AddEvent("batch.queued", $"Queued batch '{batch.DisplayName}' with {jobs.Length} independently schedulable files.", identityId: batch.IdentityId);
             await PersistAsync(cancellationToken);
             return Clone(batch);
         }
@@ -212,6 +287,7 @@ public sealed class StateStore
             worker.Mode = heartbeat.Mode;
             worker.Availability = heartbeat.Availability;
             worker.ActivityState = heartbeat.ActivityState;
+            worker.BlockingCategory = heartbeat.BlockingCategory;
             worker.AvailabilityReason = heartbeat.AvailabilityReason;
             worker.ReadyAt = heartbeat.ReadyAt;
             worker.Capabilities = heartbeat.Capabilities.Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
@@ -229,6 +305,7 @@ public sealed class StateStore
                 }
             }
 
+            UpdateWorkerActivity(worker, now);
             await PersistAsync(cancellationToken);
         }
         finally
@@ -279,6 +356,7 @@ public sealed class StateStore
                 Generation = lease.Generation
             });
             worker.ActiveJobId = job.Id;
+            UpdateWorkerActivity(worker, now);
             AddEvent("job.leased", $"'{job.DisplayName}' leased to '{worker.DisplayName}' (generation {lease.Generation}).", job.Id, workerId);
             await PersistAsync(cancellationToken);
             return new JobLease(Clone(job), lease, expiresAt);
@@ -305,6 +383,11 @@ public sealed class StateStore
             job.EtaSeconds = report.EtaSeconds is null ? null : Math.Max(0, report.EtaSeconds.Value);
             job.LeaseExpiresAt = DateTimeOffset.UtcNow.AddSeconds(options.LeaseSeconds);
             job.UpdatedAt = DateTimeOffset.UtcNow;
+            var worker = state.Workers.FirstOrDefault(item => item.WorkerId == report.WorkerId);
+            if (worker is not null)
+            {
+                UpdateWorkerActivity(worker, job.UpdatedAt);
+            }
             await PersistAsync(cancellationToken);
             return true;
         }
@@ -327,11 +410,13 @@ public sealed class StateStore
 
             FinishCurrentAttempt(job, AttemptOutcome.Succeeded, $"Published {report.OutputBytes:N0} bytes.");
             job.Status = JobStatus.Succeeded;
+            job.OutputBytes = report.OutputBytes;
             job.Progress = 1;
             job.EtaSeconds = 0;
             job.LastError = null;
             ClearLease(job);
             ClearWorkerJob(report.WorkerId, job.Id);
+            UpdateWorkerActivityFor(report.WorkerId);
             AddEvent("job.succeeded", $"'{job.DisplayName}' completed and published.", job.Id, report.WorkerId);
             await PersistAsync(cancellationToken);
             return true;
@@ -361,6 +446,7 @@ public sealed class StateStore
             FinishCurrentAttempt(job, report.ConsumesAttempt ? AttemptOutcome.EncoderFailed : AttemptOutcome.NonRetryableFailure, job.LastError);
             ClearLease(job);
             ClearWorkerJob(report.WorkerId, job.Id);
+            UpdateWorkerActivityFor(report.WorkerId);
             if (!report.Retryable || job.FailureCount >= job.MaxAttempts)
             {
                 job.Status = JobStatus.Failed;
@@ -407,6 +493,7 @@ public sealed class StateStore
             job.EtaSeconds = null;
             ClearLease(job);
             ClearWorkerJob(report.WorkerId, job.Id);
+            UpdateWorkerActivityFor(report.WorkerId);
             AddEvent("job.interrupted", $"'{job.DisplayName}' was returned to the queue without consuming an encoding attempt: {report.Reason}", job.Id, report.WorkerId);
             await PersistAsync(cancellationToken);
             return true;
@@ -475,12 +562,13 @@ public sealed class StateStore
                 if (oldWorker is not null)
                 {
                     ClearWorkerJob(oldWorker, job.Id);
+                    UpdateWorkerActivityFor(oldWorker, now);
                 }
                 AddEvent("job.lease_expired", $"'{job.DisplayName}' was requeued after its worker lease expired; no encoding failure was charged.", job.Id, oldWorker);
             }
 
-            MarkOfflineWorkers();
-            if (expired.Length > 0)
+            var workersChanged = MarkOfflineWorkers();
+            if (expired.Length > 0 || workersChanged)
             {
                 await PersistAsync(cancellationToken);
             }
@@ -540,6 +628,8 @@ public sealed class StateStore
         {
             state.Events.RemoveRange(0, state.Events.Count - MaximumEvents);
         }
+        var historyCutoff = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(options.HistoryRetentionDays, 7, 3_650));
+        state.WorkerActivities.RemoveAll(item => item.EndedAt is not null && item.EndedAt < historyCutoff);
 
         var directory = Path.GetDirectoryName(dataFile) ?? throw new InvalidOperationException("State path has no parent directory.");
         Directory.CreateDirectory(directory);
@@ -570,27 +660,144 @@ public sealed class StateStore
         }
     }
 
-    private void AddEvent(string type, string message, Guid? jobId = null, string? workerId = null)
+    private void AddEvent(
+        string type,
+        string message,
+        Guid? jobId = null,
+        string? workerId = null,
+        Guid? identityId = null)
     {
         state.Events.Add(new CoordinatorEvent
         {
             Type = type,
             Message = message,
             JobId = jobId,
-            WorkerId = workerId
+            WorkerId = workerId,
+            IdentityId = identityId
         });
     }
 
-    private void MarkOfflineWorkers()
+    private bool MarkOfflineWorkers()
     {
         var cutoff = DateTimeOffset.UtcNow.AddSeconds(-options.OfflineAfterSeconds);
-        foreach (var worker in state.Workers.Where(item => item.LastSeenAt < cutoff))
+        var changed = false;
+        foreach (var worker in state.Workers.Where(item => item.LastSeenAt < cutoff && item.Availability != WorkerAvailability.Offline))
         {
+            var offlineAt = worker.LastSeenAt.AddSeconds(options.OfflineAfterSeconds);
             worker.Availability = WorkerAvailability.Offline;
             worker.ActivityState = WorkerActivityState.None;
+            worker.BlockingCategory = WorkerBlockingCategory.Other;
             worker.AvailabilityReason = "Heartbeat overdue.";
             worker.ReadyAt = null;
+            UpdateWorkerActivity(worker, offlineAt);
+            changed = true;
         }
+        return changed;
+    }
+
+    private UserIdentityRecord? ResolveIdentity(Guid? identityId)
+    {
+        if (identityId is null)
+        {
+            return null;
+        }
+        return state.Identities.FirstOrDefault(item => item.Id == identityId)
+            ?? throw new ArgumentException("The selected identity no longer exists.");
+    }
+
+    private static string NormalizeSubmitter(string? submittedBy)
+    {
+        var value = submittedBy?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? "web" : value;
+    }
+
+    private void UpdateWorkerActivityFor(string workerId, DateTimeOffset? observedAt = null)
+    {
+        var worker = state.Workers.FirstOrDefault(item => item.WorkerId == workerId);
+        if (worker is not null)
+        {
+            UpdateWorkerActivity(worker, observedAt ?? DateTimeOffset.UtcNow);
+        }
+    }
+
+    private void UpdateWorkerActivity(WorkerRecord worker, DateTimeOffset observedAt)
+    {
+        var (kind, jobId) = DescribeWorkerActivity(worker);
+        var current = state.WorkerActivities.LastOrDefault(item =>
+            item.WorkerId == worker.WorkerId && item.EndedAt is null);
+        if (current is not null && current.Kind == kind && current.JobId == jobId)
+        {
+            current.LastObservedAt = observedAt;
+            current.Reason = worker.AvailabilityReason;
+            return;
+        }
+
+        if (current is not null)
+        {
+            current.LastObservedAt = observedAt;
+            current.EndedAt = observedAt;
+        }
+        state.WorkerActivities.Add(new WorkerActivityRecord
+        {
+            WorkerId = worker.WorkerId,
+            Kind = kind,
+            StartedAt = observedAt,
+            LastObservedAt = observedAt,
+            Reason = worker.AvailabilityReason,
+            JobId = jobId
+        });
+    }
+
+    private (WorkerActivityKind Kind, Guid? JobId) DescribeWorkerActivity(WorkerRecord worker)
+    {
+        if (worker.Availability == WorkerAvailability.Offline)
+        {
+            return (WorkerActivityKind.Offline, null);
+        }
+
+        if (worker.ActiveJobId is Guid activeJobId)
+        {
+            if (worker.Availability == WorkerAvailability.Draining)
+            {
+                return (WorkerActivityKind.Draining, activeJobId);
+            }
+            var job = state.Jobs.FirstOrDefault(item => item.Id == activeJobId);
+            var capabilities = job?.RequiredCapabilities ?? [];
+            if (capabilities.Any(item => item.StartsWith("upscale:", StringComparison.OrdinalIgnoreCase)))
+            {
+                return (WorkerActivityKind.Upscaling, activeJobId);
+            }
+            if (capabilities.Any(item =>
+                    item.StartsWith("encode:nvenc", StringComparison.OrdinalIgnoreCase)
+                    || item.StartsWith("encode:qsv", StringComparison.OrdinalIgnoreCase)
+                    || item.StartsWith("encode:vcn", StringComparison.OrdinalIgnoreCase)
+                    || item.StartsWith("encode:vce", StringComparison.OrdinalIgnoreCase)))
+            {
+                return (WorkerActivityKind.EncodingGpu, activeJobId);
+            }
+            return (WorkerActivityKind.EncodingCpu, activeJobId);
+        }
+
+        return worker.BlockingCategory switch
+        {
+            WorkerBlockingCategory.HumanActivity => (WorkerActivityKind.HumanActivity, null),
+            WorkerBlockingCategory.IdleCooldown => (WorkerActivityKind.IdleCooldown, null),
+            WorkerBlockingCategory.AgentWork => (WorkerActivityKind.AgentWork, null),
+            WorkerBlockingCategory.AgentReserved => (WorkerActivityKind.AgentReserved, null),
+            WorkerBlockingCategory.SystemBusy => (WorkerActivityKind.SystemBusy, null),
+            WorkerBlockingCategory.OperatorPaused => (WorkerActivityKind.OperatorPaused, null),
+            WorkerBlockingCategory.Configuration => (WorkerActivityKind.Misconfigured, null),
+            _ => worker.Availability switch
+            {
+                WorkerAvailability.HumanActive when worker.ActivityState == WorkerActivityState.IdleCooldown => (WorkerActivityKind.IdleCooldown, null),
+                WorkerAvailability.HumanActive => (WorkerActivityKind.HumanActivity, null),
+                WorkerAvailability.GameWorkerReserved => (WorkerActivityKind.AgentReserved, null),
+                WorkerAvailability.PausedByOperator => (WorkerActivityKind.OperatorPaused, null),
+                WorkerAvailability.Misconfigured => (WorkerActivityKind.Misconfigured, null),
+                WorkerAvailability.Inhibited => (WorkerActivityKind.SystemBusy, null),
+                _ => (WorkerActivityKind.AvailableNoWork, null)
+            }
+        };
     }
 
     private static bool HasLease(JobRecord job, string workerId, LeaseProof proof)

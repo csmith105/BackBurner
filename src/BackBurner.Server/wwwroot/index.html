@@ -7,138 +7,187 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header>
+  <header class="masthead">
     <div>
       <p class="eyebrow">LAN media workers</p>
       <h1>BackBurner</h1>
       <p class="lede">Queue the careful work. Let idle machines carry it.</p>
     </div>
-    <div id="auth-box" class="auth-box" hidden>
-      <div class="auth-heading"><span>Coordinator access</span><span id="auth-status" class="status locked">Key required</span></div>
-      <div class="auth-controls">
-        <input id="admin-key" type="password" autocomplete="off" placeholder="Paste admin key">
-        <button id="connect" type="button">Connect</button>
+    <div class="session-tools">
+      <div class="identity-box">
+        <div class="identity-heading"><span>Working as</span><span class="passwordless">passwordless · LAN only</span></div>
+        <div class="identity-controls">
+          <select id="identity-picker" aria-label="Current identity"><option value="">Choose an identity</option></select>
+          <button id="add-identity" type="button">+ Add</button>
+        </div>
       </div>
-      <small>The key stays in this browser tab’s session storage.</small>
+      <div id="auth-box" class="auth-box" hidden>
+        <div class="auth-heading"><span>Coordinator access</span><span id="auth-status" class="status locked">Key required</span></div>
+        <div class="auth-controls">
+          <input id="admin-key" type="password" autocomplete="off" placeholder="Paste admin key">
+          <button id="connect" type="button">Connect</button>
+        </div>
+      </div>
     </div>
   </header>
 
+  <nav class="tabs" aria-label="BackBurner sections">
+    <button type="button" data-tab="dashboard" class="selected">Dashboard</button>
+    <button type="button" data-tab="new-job">New job</button>
+    <button type="button" data-tab="workers">Workers &amp; queue</button>
+    <button type="button" data-tab="history">History</button>
+    <span class="tab-spacer"></span>
+    <span id="connection-indicator" class="connection-indicator"><i></i> Connecting</span>
+  </nav>
+
   <main>
-    <section class="panel compose wide">
-      <div class="section-heading">
-        <div><p class="eyebrow">New encoding</p><h2>Build the work</h2></div>
-        <label>Load preset <select id="preset-picker"><option value="">Unsaved settings</option></select></label>
-      </div>
-      <div id="message" role="status" aria-live="polite"></div>
-      <div class="mode-switch" role="group" aria-label="Work type">
-        <button id="single-mode" class="selected" type="button">Single file</button>
-        <button id="batch-mode" type="button">Directory batch</button>
-      </div>
+    <div id="message" role="status" aria-live="polite"></div>
 
-      <form id="job-form">
-        <div id="single-fields" class="mode-fields">
-          <div class="grid two">
-            <label>Job name <input id="display-name" required maxlength="200" placeholder="Movie Name — 1080p"></label>
-            <label>Destination library
-              <select id="destination-root">
-                <option value="plex-movies">Movies</option>
-                <option value="plex-series">Shows</option>
+    <section class="tab-panel" data-tab-panel="dashboard">
+      <div class="page-heading">
+        <div><p class="eyebrow">Right now</p><h2>System dashboard</h2></div>
+        <button id="refresh-dashboard" class="quiet" type="button">Refresh</button>
+      </div>
+      <div id="summary-stats" class="stat-grid"></div>
+      <div class="dashboard-grid">
+        <section class="panel dashboard-active">
+          <div class="section-heading"><div><p class="eyebrow">Work in flight</p><h2>Active now</h2></div><span id="active-count" class="badge">0</span></div>
+          <div id="active-now" class="cards empty">No encodes are running.</div>
+        </section>
+        <section class="panel dashboard-fleet">
+          <div class="section-heading"><div><p class="eyebrow">Fleet pulse</p><h2>Worker health</h2></div><span id="live-worker-count" class="badge">0</span></div>
+          <div id="dashboard-workers" class="dashboard-workers empty">No workers have checked in.</div>
+        </section>
+      </div>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Throughput</p><h2>Capability lanes</h2></div></div>
+        <p class="fleet-note">Eligibility is shown across CPU, GPU, and upscaling lanes. Each machine currently accepts one BackBurner job at a time.</p>
+        <div id="dashboard-capacity" class="capacity-grid empty">Loading worker capacity…</div>
+      </section>
+    </section>
+
+    <section class="tab-panel" data-tab-panel="new-job" hidden>
+      <div class="page-heading"><div><p class="eyebrow">New encoding</p><h2>Build the work</h2></div></div>
+      <section class="panel compose">
+        <div class="section-heading">
+          <div><p class="eyebrow">Source &amp; destination</p><h2>Queue an encode</h2></div>
+          <label>Load preset <select id="preset-picker"><option value="">Unsaved settings</option></select></label>
+        </div>
+        <div class="mode-switch" role="group" aria-label="Work type">
+          <button id="single-mode" class="selected" type="button">Single file</button>
+          <button id="batch-mode" type="button">Directory batch</button>
+        </div>
+
+        <form id="job-form">
+          <div id="single-fields" class="mode-fields">
+            <div class="grid two">
+              <label>Job name <input id="display-name" required maxlength="200" placeholder="Movie Name — 1080p"></label>
+              <label>Destination library <select id="destination-root"><option value="plex-movies">Movies</option><option value="plex-series">Shows</option></select></label>
+            </div>
+            <label>Source file <input id="source-path" required placeholder="incoming:/Movie Name/source.mkv"></label>
+            <label>Final relative path <input id="destination-relative" required placeholder="Movie Name (2026)/Movie Name (2026).mkv"></label>
+          </div>
+
+          <div id="batch-fields" class="mode-fields" hidden>
+            <div class="grid two">
+              <label>Batch name <input id="batch-name" maxlength="200" placeholder="Show Name — Season 01"></label>
+              <label>Destination library <select id="batch-destination-root"><option value="plex-series">Shows</option><option value="plex-movies">Movies</option></select></label>
+            </div>
+            <div class="scan-line">
+              <label>NAS source directory <input id="batch-source-directory" placeholder="nas-media:/Show Name/Season 01"></label>
+              <label class="inline-check"><input id="batch-recursive" type="checkbox"> Include subdirectories</label>
+              <button id="scan-directory" type="button">Scan directory</button>
+            </div>
+            <label>Final destination directory <input id="batch-destination-directory" placeholder="Show Name (2026)/Season 01"></label>
+            <div id="scan-result" class="scan-result empty-scan">Scan a directory to find video-file candidates. Nothing is selected automatically.</div>
+            <div id="scan-selection" class="selection-toolbar" hidden>
+              <span id="scan-count">0 files</span><span class="spacer"></span>
+              <button id="select-all" type="button" class="quiet small">Select all</button>
+              <button id="select-none" type="button" class="quiet small">Select none</button>
+            </div>
+            <div id="scan-table-wrap" class="table-wrap scan-table" hidden>
+              <table><thead><tr><th></th><th>Candidate file</th><th>Size</th></tr></thead><tbody id="scanned-files"></tbody></table>
+            </div>
+          </div>
+
+          <div class="grid four settings">
+            <label>Container <select id="container"><option>mkv</option><option>mp4</option></select></label>
+            <label>Video encoder
+              <select id="video-encoder">
+                <option value="x265">H.265 (CPU)</option><option value="x264">H.264 (CPU)</option>
+                <option value="nvenc_h265">H.265 (NVIDIA)</option><option value="qsv_h265">H.265 (Intel)</option><option value="vce_h265">H.265 (AMD)</option>
               </select>
             </label>
+            <label>Constant quality <input id="quality" type="number" min="0" max="51" step="0.5" value="22"></label>
+            <label>Encoder speed <input id="encoder-preset" value="medium"></label>
+            <label>Max width <input id="max-width" type="number" min="1" placeholder="unlimited"></label>
+            <label>Max height <input id="max-height" type="number" min="1" placeholder="unlimited"></label>
+            <label>Audio <select id="audio-encoder"><option value="copy">Passthrough when possible</option><option value="av_aac">AAC</option><option value="av_ac3">AC3</option><option value="eac3">E-AC3</option></select></label>
+            <label>Max attempts <input id="max-attempts" type="number" min="1" max="10" value="3"></label>
           </div>
-          <label>Source file <input id="source-path" required placeholder="incoming:/Movie Name/source.mkv"></label>
-          <label>Final relative path <input id="destination-relative" required placeholder="Movie Name (2026)/Movie Name (2026).mkv"></label>
-        </div>
-
-        <div id="batch-fields" class="mode-fields" hidden>
-          <div class="grid two">
-            <label>Batch name <input id="batch-name" maxlength="200" placeholder="Show Name — Season 01"></label>
-            <label>Destination library
-              <select id="batch-destination-root">
-                <option value="plex-series">Shows</option>
-                <option value="plex-movies">Movies</option>
-              </select>
-            </label>
+          <div class="check-row">
+            <label><input id="all-audio" type="checkbox" checked> All audio tracks</label>
+            <label><input id="all-subtitles" type="checkbox" checked> All subtitles</label>
+            <label><input id="chapters" type="checkbox" checked> Chapter markers</label>
           </div>
-          <div class="scan-line">
-            <label>NAS source directory <input id="batch-source-directory" placeholder="nas-media:/Show Name/Season 01"></label>
-            <label class="inline-check"><input id="batch-recursive" type="checkbox"> Include subdirectories</label>
-            <button id="scan-directory" type="button">Scan directory</button>
+          <label>Advanced CLI arguments, one argument per line <textarea id="extra-arguments" rows="3" placeholder="--comb-detect&#10;--decomb"></textarea></label>
+          <div class="actions">
+            <button id="queue-work" class="primary" type="submit">Queue encoding</button>
+            <button id="save-preset" type="button">Save settings as preset</button>
+            <button id="reset-settings" type="button" class="quiet">Reset settings</button>
           </div>
-          <label>Final destination directory <input id="batch-destination-directory" placeholder="Show Name (2026)/Season 01"></label>
-          <div id="scan-result" class="scan-result empty-scan">Scan a directory to find video-file candidates. Nothing is selected automatically.</div>
-          <div id="scan-selection" class="selection-toolbar" hidden>
-            <span id="scan-count">0 files</span>
-            <span class="spacer"></span>
-            <button id="select-all" type="button" class="quiet small">Select all</button>
-            <button id="select-none" type="button" class="quiet small">Select none</button>
-          </div>
-          <div id="scan-table-wrap" class="table-wrap scan-table" hidden>
-            <table>
-              <thead><tr><th></th><th>Candidate file</th><th>Size</th></tr></thead>
-              <tbody id="scanned-files"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="grid four settings">
-          <label>Container <select id="container"><option>mkv</option><option>mp4</option></select></label>
-          <label>Video encoder
-            <select id="video-encoder">
-              <option value="x265">H.265 (CPU)</option>
-              <option value="x264">H.264 (CPU)</option>
-              <option value="nvenc_h265">H.265 (NVIDIA)</option>
-              <option value="qsv_h265">H.265 (Intel)</option>
-              <option value="vce_h265">H.265 (AMD)</option>
-            </select>
-          </label>
-          <label>Constant quality <input id="quality" type="number" min="0" max="51" step="0.5" value="22"></label>
-          <label>Encoder speed <input id="encoder-preset" value="medium"></label>
-          <label>Max width <input id="max-width" type="number" min="1" placeholder="unlimited"></label>
-          <label>Max height <input id="max-height" type="number" min="1" placeholder="unlimited"></label>
-          <label>Audio <select id="audio-encoder"><option value="copy">Passthrough when possible</option><option value="av_aac">AAC</option><option value="av_ac3">AC3</option><option value="eac3">E-AC3</option></select></label>
-          <label>Max attempts <input id="max-attempts" type="number" min="1" max="10" value="3"></label>
-        </div>
-        <div class="check-row">
-          <label><input id="all-audio" type="checkbox" checked> All audio tracks</label>
-          <label><input id="all-subtitles" type="checkbox" checked> All subtitles</label>
-          <label><input id="chapters" type="checkbox" checked> Chapter markers</label>
-        </div>
-        <label>Advanced CLI arguments, one argument per line <textarea id="extra-arguments" rows="3" placeholder="--comb-detect&#10;--decomb"></textarea></label>
-
-        <div class="actions">
-          <button id="queue-work" class="primary" type="submit">Queue encoding</button>
-          <button id="save-preset" type="button">Save settings as preset</button>
-          <button id="reset-settings" type="button" class="quiet">Reset settings</button>
-        </div>
-      </form>
+        </form>
+      </section>
     </section>
 
-    <section class="panel wide fleet-panel">
-      <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers and capacity</h2></div><span id="worker-count" class="badge">0</span></div>
-      <p class="fleet-note">Capability lanes show eligibility, not simultaneous capacity. A machine may appear in several lanes, but currently runs one BackBurner job at a time.</p>
-      <div id="capacity" class="capacity-grid empty">Loading worker capacity…</div>
-      <div id="workers" class="worker-grid empty">Loading workers…</div>
+    <section class="tab-panel" data-tab-panel="workers" hidden>
+      <div class="page-heading"><div><p class="eyebrow">Operations</p><h2>Workers &amp; queue</h2></div><button id="refresh-workers" class="quiet" type="button">Refresh</button></div>
+      <section class="panel fleet-panel">
+        <div class="section-heading"><div><p class="eyebrow">Fleet</p><h2>Workers</h2></div><span id="worker-count" class="badge">0</span></div>
+        <div id="workers" class="worker-grid empty">Loading workers…</div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Capacity</p><h2>Work lanes</h2></div></div>
+        <div id="capacity" class="capacity-grid empty">Loading worker capacity…</div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Collections</p><h2>Batches</h2></div><span id="batch-count" class="badge">0</span></div>
+        <div id="batches" class="cards empty">No directory batches yet.</div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Individual jobs</h2></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Job</th><th>Class</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Submitted by</th><th>Last note</th><th></th></tr></thead>
+          <tbody id="jobs"><tr><td colspan="9" class="empty">Loading jobs…</td></tr></tbody>
+        </table></div>
+      </section>
     </section>
 
-    <section class="panel wide">
-      <div class="section-heading"><div><p class="eyebrow">Collections</p><h2>Batches</h2></div><span id="batch-count" class="badge">0</span></div>
-      <div id="batches" class="cards empty">No directory batches yet.</div>
-    </section>
-
-    <section class="panel wide">
-      <div class="section-heading"><div><p class="eyebrow">Queue</p><h2>Individual jobs</h2></div><button id="refresh" class="quiet">Refresh</button></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Job</th><th>Work class</th><th>Status</th><th>Progress</th><th>Attempts</th><th>Worker</th><th>Last note</th><th></th></tr></thead>
-          <tbody id="jobs"><tr><td colspan="8" class="empty">Loading jobs…</td></tr></tbody>
-        </table>
+    <section class="tab-panel" data-tab-panel="history" hidden>
+      <div class="page-heading">
+        <div><p class="eyebrow">Look back</p><h2>History &amp; utilization</h2></div>
+        <div class="history-filters">
+          <label>Worker <select id="history-worker"><option value="">All workers</option></select></label>
+          <label>Window <select id="history-window"><option value="24">24 hours</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="all">All retained</option></select></label>
+        </div>
       </div>
-    </section>
-
-    <section class="panel wide">
-      <div class="section-heading"><div><p class="eyebrow">Audit trail</p><h2>Recent events</h2></div></div>
-      <ol id="events" class="events"><li class="empty">Loading events…</li></ol>
+      <div id="history-stats" class="stat-grid"></div>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Why machines did—or did not—work</p><h2>Worker timelines</h2></div></div>
+        <div id="timeline-legend" class="timeline-legend"></div>
+        <div id="worker-timelines" class="timelines empty">History begins as workers report state changes.</div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Completed &amp; attempted work</p><h2>Job history</h2></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Job</th><th>Status</th><th>Worker activity</th><th>Compute time</th><th>Submitted by</th><th>Updated</th></tr></thead>
+          <tbody id="job-history"></tbody>
+        </table></div>
+      </section>
+      <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Audit trail</p><h2>Recent events</h2></div></div>
+        <ol id="events" class="events"><li class="empty">Loading events…</li></ol>
+      </section>
     </section>
   </main>
   <script src="/app.js" defer></script>

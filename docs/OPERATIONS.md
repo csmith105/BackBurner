@@ -11,7 +11,7 @@ dotnet restore BackBurner.slnx
 dotnet run --project src/BackBurner.Server
 ```
 
-State defaults to `data/backburner-state.json` relative to the server working directory. Set `BackBurner__DataFile` to change it. The server is loopback-only unless its ASP.NET Core URLs are deliberately changed.
+State defaults to `data/backburner-state.json` relative to the server working directory. Set `BackBurner__DataFile` to change it. The state document includes queue state, presets, local identities, worker ownership, audit events, and transition-based worker history. Completed worker-activity intervals default to a 365-day retention through `BackBurner__HistoryRetentionDays`. Back up the state document as a unit; do not edit it while the coordinator is running. The server is loopback-only unless its ASP.NET Core URLs are deliberately changed.
 
 Authentication defaults on. For an authenticated deployment, set strong independent values for:
 
@@ -25,6 +25,8 @@ and workers may leave `workerApiKey` empty. Re-enable authentication before any
 reverse proxy, port forwarding, routed guest network, remote access, or Internet
 exposure.
 
+The web console lands on **Dashboard** and separates **New job**, **Workers & queue**, and **History** into top navigation tabs. The identity selector is attribution, not authentication: creating or selecting a name writes only the identity UUID to that browser's local storage. Select an identity before queueing so jobs record the operator. Worker cards provide an independent owner selector for grouping machines by person.
+
 ## Worker configuration
 
 Copy `config/worker.example.json` to `worker.local.json`; that filename is ignored by Git. Configure a stable worker ID, the coordinator URL and key, HandBrakeCLI path, exact capabilities, and platform-specific logical roots.
@@ -36,7 +38,7 @@ sources empty. Do not print a real value in startup scripts or commit it.
 
 Select the correct `mode`:
 
-- `PersonalDesktop`: human-owned Windows computer; keep the 15-minute idle/quiet and 30-second recent-input defaults initially. The dashboard shows recent input as blocked, then a live idle-cooldown countdown.
+- `PersonalDesktop`: human-owned Windows computer; keep the 15-minute idle/quiet and 30-second recent-input defaults initially. The dashboard shows current human use in yellow, then a live idle-cooldown countdown. Yellow is a normal policy gate; red is reserved for unavailable agent reservations, offline workers, and faults.
 - `SharedGameWorker`: Cody game-development node; configure both game-worker state paths.
 - `DedicatedRenderNode`: machine whose sole purpose is rendering/encoding; desktop and ambient-CPU gates are skipped.
 

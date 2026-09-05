@@ -144,6 +144,7 @@ public sealed class WorkerCoreTests : IDisposable
         var result = probe.Check();
 
         Assert.Equal(WorkerAvailability.Inhibited, result.Availability);
+        Assert.Equal(WorkerBlockingCategory.AgentWork, result.BlockingCategory);
         Assert.Contains("Codex is compiling", result.Reason);
     }
 

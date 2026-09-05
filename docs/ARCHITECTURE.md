@@ -22,7 +22,7 @@ The coordinator never assumes that a worker can perform every operation. Each he
 
 ## Coordinator
 
-The coordinator is an ASP.NET Core service with a static, no-build browser UI. In the first milestone it persists a single state document using fsync-friendly temporary-file replacement under one process-wide lock. This is appropriate for one low-volume coordinator and keeps the first deployment understandable. SQLite or PostgreSQL becomes appropriate before multiple coordinator replicas or substantial reporting queries.
+The coordinator is an ASP.NET Core service with a static, no-build browser UI. In the first milestone it persists a single state document using fsync-friendly temporary-file replacement under one process-wide lock. The same document retains jobs, identities, worker ownership, audit events, and transition-based worker activity. This is appropriate for one low-volume coordinator and keeps the first deployment understandable. SQLite or PostgreSQL becomes appropriate before multiple coordinator replicas or substantial reporting queries.
 
 Coordinator responsibilities:
 
@@ -34,6 +34,8 @@ Coordinator responsibilities:
 - Expire abandoned leases and preserve their interruption history.
 - Apply bounded encoder-failure retry policy.
 - Keep worker status, job progress, ETA, error summaries, and an audit event stream.
+- Attribute submitted jobs and worker ownership to passwordless local identities.
+- Record worker activity only when its typed state or active job changes; refresh the open segment on heartbeats rather than appending heartbeat samples.
 
 HTTP authentication is a deployment policy rather than a scheduler invariant.
 It defaults on, but may be explicitly disabled for a coordinator bound only to
@@ -53,9 +55,22 @@ Workers have an explicit operating mode:
 - `SharedGameWorker` joins the existing Cody broker only after the development queue is empty. It uses a 60-second fenced lease, launches HandBrake through `cody-workerctl run`, checks the FIFO every worker poll (maximum 30 seconds), and releases promptly when development work appears.
 - `DedicatedRenderNode` bypasses human-idle and ambient-CPU gates, but still honors explicit operator and inhibit controls.
 
-Every heartbeat carries that typed mode, structured availability and activity states, an optional earliest-ready timestamp, capabilities, hardware profile, and active job ID. The dashboard uses the typed fields rather than parsing human-readable status messages. A personal desktop can therefore distinguish current human input from an idle cooldown and show a live countdown; a shared game worker reports a broker reservation as `GameWorkerReserved`; and an active job is joined to the worker record for its name, progress, and ETA.
+Every heartbeat carries that typed mode, structured availability and activity states, a typed `blockingCategory`, an optional earliest-ready timestamp, capabilities, hardware profile, and active job ID. The dashboard uses the typed fields rather than parsing human-readable status messages. A personal desktop can therefore distinguish current human input from an idle cooldown and show a live countdown; Codex activity and ambient system load remain distinct; a shared game worker reports a broker reservation as `GameWorkerReserved`; and an active job is joined to the worker record for its name, progress, and ETA.
 
 The dashboard groups queued work and registered workers into CPU encoding, hardware/GPU encoding, and AI-upscaling lanes by capability tags. A worker may appear in multiple lanes because eligibility is set-based. This is not a promise of concurrent execution: the current worker agent has one claim slot and runs at most one BackBurner job at a time. Multi-resource concurrency requires measured CPU, GPU, decoder, memory, thermal, and NAS-I/O budgets before the coordinator gains resource-counted claims.
+
+## Web console, identity, and history
+
+The no-build browser UI has four routes represented by URL-hash tabs:
+
+- **Dashboard** is the landing view for aggregate throughput, active work, heartbeat health, and capability lanes.
+- **New job** owns single-file and read-only directory-batch submission.
+- **Workers & queue** owns detailed worker cards, machine-owner assignment, batches, and individual jobs.
+- **History** filters per-worker transition timelines, job attempts, and audit events by time window.
+
+An identity is deliberately not an authentication account. It is a display name and UUID selected in the browser and retained in local storage. Job creation sends that UUID; the coordinator validates it and copies both the UUID and current display name into the immutable job/batch record. A worker may reference an owner identity, but heartbeats never overwrite that association. Authentication remains the separate deployment-level API-key policy.
+
+Worker history is a list of state intervals, not periodic telemetry. A heartbeat extends the matching open interval. A change in blocking category, processing class, active job, drain state, or connectivity closes the prior interval and opens another. Completed intervals are retained for `BackBurner:HistoryRetentionDays` (365 by default); the dashboard snapshot returns at most the newest 5,000. This is enough for household-scale history without multiplying writes or response size by heartbeat frequency. Output size is captured on successful completion; compute time is derived from immutable attempt timestamps.
 
 ## Human return and drain behavior
 

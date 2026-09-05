@@ -212,6 +212,87 @@ public sealed class StateStoreTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => store.EnqueueAsync(request, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Passwordless_identity_is_snapshotted_on_jobs_and_can_own_workers()
+    {
+        var identity = await store.CreateIdentityAsync(new CreateIdentityRequest("Cody"), CancellationToken.None);
+        await RegisterWorker("worker-a", "encode:x265");
+
+        Assert.True(await store.SetWorkerOwnerAsync(
+            "worker-a",
+            new SetWorkerOwnerRequest(identity.Id),
+            CancellationToken.None));
+        var job = await store.EnqueueAsync(new CreateJobRequest
+        {
+            DisplayName = "Attributed video",
+            SourcePath = "incoming:/source.mkv",
+            DestinationPath = "plex-movies:/Test (2026)/Attributed.mkv",
+            Settings = new HandBrakeSettings { VideoEncoder = "x265" },
+            IdentityId = identity.Id
+        }, CancellationToken.None);
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+
+        Assert.Equal("Cody", job.SubmittedBy);
+        Assert.Equal(identity.Id, job.IdentityId);
+        Assert.Equal(identity.Id, snapshot.Workers.Single().OwnerIdentityId);
+        Assert.Equal("Cody", snapshot.Identities.Single().DisplayName);
+        Assert.Contains(snapshot.Events, item => item.Type == "job.queued" && item.IdentityId == identity.Id);
+    }
+
+    [Fact]
+    public async Task Worker_history_records_state_transitions_instead_of_every_heartbeat()
+    {
+        var humanHeartbeat = new WorkerHeartbeat
+        {
+            WorkerId = "worker-a",
+            DisplayName = "Worker A",
+            Availability = WorkerAvailability.HumanActive,
+            ActivityState = WorkerActivityState.HumanActive,
+            BlockingCategory = WorkerBlockingCategory.HumanActivity,
+            AvailabilityReason = "Human input is active.",
+            Capabilities = ["handbrake", "encode:x265"]
+        };
+        await store.HeartbeatAsync(humanHeartbeat, CancellationToken.None);
+        await store.HeartbeatAsync(humanHeartbeat, CancellationToken.None);
+        await store.HeartbeatAsync(humanHeartbeat with
+        {
+            Availability = WorkerAvailability.Available,
+            ActivityState = WorkerActivityState.None,
+            BlockingCategory = WorkerBlockingCategory.None,
+            AvailabilityReason = "No work to do."
+        }, CancellationToken.None);
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+        var history = snapshot.WorkerActivities.OrderBy(item => item.StartedAt).ToArray();
+
+        Assert.Equal(2, history.Length);
+        Assert.Equal(WorkerActivityKind.HumanActivity, history[0].Kind);
+        Assert.NotNull(history[0].EndedAt);
+        Assert.Equal(WorkerActivityKind.AvailableNoWork, history[1].Kind);
+        Assert.Null(history[1].EndedAt);
+    }
+
+    [Fact]
+    public async Task Successful_completion_records_output_size_and_cpu_activity()
+    {
+        var job = await EnqueueX265();
+        await RegisterWorker("worker-a", "encode:x265");
+        var claim = await store.ClaimAsync("worker-a", CancellationToken.None);
+        Assert.NotNull(claim);
+
+        Assert.True(await store.CompleteAsync(job.Id, new CompletionReport
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease,
+            OutputBytes = 123_456
+        }, CancellationToken.None));
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+        Assert.Equal(123_456, snapshot.Jobs.Single().OutputBytes);
+        Assert.Contains(snapshot.WorkerActivities, item => item.Kind == WorkerActivityKind.EncodingCpu && item.JobId == job.Id);
+    }
+
     private Task<JobRecord> EnqueueX265()
     {
         return store.EnqueueAsync(new CreateJobRequest

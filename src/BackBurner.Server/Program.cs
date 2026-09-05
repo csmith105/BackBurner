@@ -55,6 +55,28 @@ app.MapGet("/api/config", () => Results.Ok(new
 
 var admin = app.MapGroup("/api/admin");
 admin.MapGet("/snapshot", (StateStore store, CancellationToken token) => store.SnapshotAsync(token));
+admin.MapPost("/identities", async (CreateIdentityRequest request, StateStore store, CancellationToken token) =>
+{
+    try
+    {
+        return Results.Ok(await store.CreateIdentityAsync(request, token));
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+admin.MapPut("/workers/{workerId}/owner", async (string workerId, SetWorkerOwnerRequest request, StateStore store, CancellationToken token) =>
+{
+    try
+    {
+        return await store.SetWorkerOwnerAsync(workerId, request, token) ? Results.NoContent() : Results.NotFound();
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
 admin.MapPost("/presets", async (CreatePresetRequest request, StateStore store, CancellationToken token) =>
 {
     try

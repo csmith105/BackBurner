@@ -2,7 +2,7 @@
 
 BackBurner is a private, LAN-first distributed media-processing system. A central coordinator queues immutable job definitions; capability-aware workers claim jobs only when their host is available; HandBrakeCLI performs the first supported operation. Windows workers can drain gracefully when a human returns, while dedicated Ubuntu workers yield absolutely to the game-development lease system.
 
-The coordinator is deployed as a LAN-only native service on `plex`; the worker fleet and NAS staging workflow are not yet deployed. The repository establishes the contracts, scheduler, retry rules, HandBrake process control, logical NAS paths, and Windows interaction model. No BackBurner worker has written to NASquatch or the Plex libraries.
+The coordinator is deployed as a LAN-only native service on `plex`, and the first Windows notification-area worker is running on `CODY-PC`. The broader worker fleet and NAS staging workflow are not yet deployed. No BackBurner worker has written to NASquatch or the Plex libraries.
 
 ## Current milestone
 
@@ -15,7 +15,10 @@ The coordinator is deployed as a LAN-only native service on `plex`; the worker f
 - HandBrakeCLI progress, ETA, pause (`p`), resume (`r`), and graceful quit (`q`) control.
 - Windows idle detection and a notification-area host with Pause and Stop & Requeue actions.
 - Personal-desktop, shared-game-worker, and dedicated-render-node availability modes.
-- Fleet dashboard with typed worker roles, live state/countdowns, active jobs, and CPU/GPU/upscale capability lanes.
+- Tabbed web console with a quick-glance dashboard, job builder, worker/queue operations, and retained history.
+- Fleet dashboard with typed worker roles, live heartbeat state/countdowns, active jobs, and CPU/GPU/upscale capability lanes.
+- Passwordless LAN identities for job attribution and machine ownership.
+- Transition-based worker timelines and aggregate completion, compute-time, utilization, and output-size statistics.
 - Explicit Codex inhibit markers, lifecycle-hook templates, and CPU monitoring fallback.
 - Full participation in the Cody game-worker broker: short leases, fenced execution, queue preemption, and prompt release.
 - Logical path mappings so the same job can resolve SMB paths on Windows and mounted paths on Linux.

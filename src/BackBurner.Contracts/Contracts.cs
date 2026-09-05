@@ -29,6 +29,36 @@ public enum WorkerActivityState
     IdleCooldown
 }
 
+public enum WorkerBlockingCategory
+{
+    None,
+    HumanActivity,
+    IdleCooldown,
+    AgentWork,
+    AgentReserved,
+    SystemBusy,
+    OperatorPaused,
+    Configuration,
+    Other
+}
+
+public enum WorkerActivityKind
+{
+    AvailableNoWork,
+    HumanActivity,
+    IdleCooldown,
+    AgentWork,
+    AgentReserved,
+    SystemBusy,
+    EncodingCpu,
+    EncodingGpu,
+    Upscaling,
+    Draining,
+    OperatorPaused,
+    Misconfigured,
+    Offline
+}
+
 public enum WorkerMode
 {
     PersonalDesktop,
@@ -93,6 +123,7 @@ public sealed record CreateJobRequest
     public required HandBrakeSettings Settings { get; init; }
     public int MaxAttempts { get; init; } = 3;
     public string SubmittedBy { get; init; } = "web";
+    public Guid? IdentityId { get; init; }
 }
 
 public sealed record BatchItemRequest
@@ -110,6 +141,7 @@ public sealed record CreateBatchRequest
     public required HandBrakeSettings Settings { get; init; }
     public int MaxAttempts { get; init; } = 3;
     public string SubmittedBy { get; init; } = "web";
+    public Guid? IdentityId { get; init; }
     public required BatchItemRequest[] Items { get; init; }
 }
 
@@ -120,6 +152,7 @@ public sealed record BatchRecord
     public required string SourceDirectory { get; init; }
     public string? PresetName { get; init; }
     public string SubmittedBy { get; init; } = "web";
+    public Guid? IdentityId { get; init; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public required Guid[] JobIds { get; init; }
 }
@@ -162,6 +195,7 @@ public sealed record JobRecord
     public required string[] RequiredCapabilities { get; init; }
     public Guid? BatchId { get; init; }
     public string SubmittedBy { get; init; } = "web";
+    public Guid? IdentityId { get; init; }
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public JobStatus Status { get; set; } = JobStatus.Queued;
     public int MaxAttempts { get; init; } = 3;
@@ -175,6 +209,7 @@ public sealed record JobRecord
     public decimal Progress { get; set; }
     public int? EtaSeconds { get; set; }
     public string? LastError { get; set; }
+    public long? OutputBytes { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<JobAttempt> Attempts { get; init; } = [];
 }
@@ -186,6 +221,7 @@ public sealed record WorkerHeartbeat
     public WorkerMode Mode { get; init; } = WorkerMode.PersonalDesktop;
     public WorkerAvailability Availability { get; init; }
     public WorkerActivityState ActivityState { get; init; }
+    public WorkerBlockingCategory BlockingCategory { get; init; }
     public string AvailabilityReason { get; init; } = "";
     public DateTimeOffset? ReadyAt { get; init; }
     public string[] Capabilities { get; init; } = [];
@@ -201,12 +237,37 @@ public sealed record WorkerRecord
     public WorkerMode Mode { get; set; } = WorkerMode.PersonalDesktop;
     public WorkerAvailability Availability { get; set; }
     public WorkerActivityState ActivityState { get; set; }
+    public WorkerBlockingCategory BlockingCategory { get; set; }
     public string AvailabilityReason { get; set; } = "";
     public DateTimeOffset? ReadyAt { get; set; }
     public string[] Capabilities { get; set; } = [];
     public Dictionary<string, string> Profile { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
     public Guid? ActiveJobId { get; set; }
+    public Guid? OwnerIdentityId { get; set; }
+}
+
+public sealed record UserIdentityRecord
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string DisplayName { get; init; }
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+public sealed record CreateIdentityRequest(string DisplayName);
+
+public sealed record SetWorkerOwnerRequest(Guid? IdentityId);
+
+public sealed record WorkerActivityRecord
+{
+    public Guid Id { get; init; } = Guid.NewGuid();
+    public required string WorkerId { get; init; }
+    public WorkerActivityKind Kind { get; init; }
+    public DateTimeOffset StartedAt { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset LastObservedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? EndedAt { get; set; }
+    public string Reason { get; set; } = "";
+    public Guid? JobId { get; init; }
 }
 
 public sealed record ClaimRequest(string WorkerId);
@@ -254,6 +315,7 @@ public sealed record CoordinatorEvent
     public required string Message { get; init; }
     public Guid? JobId { get; init; }
     public string? WorkerId { get; init; }
+    public Guid? IdentityId { get; init; }
 }
 
 public sealed record DashboardSnapshot(
@@ -261,6 +323,8 @@ public sealed record DashboardSnapshot(
     IReadOnlyList<BatchRecord> Batches,
     IReadOnlyList<PresetRecord> Presets,
     IReadOnlyList<WorkerRecord> Workers,
-    IReadOnlyList<CoordinatorEvent> Events);
+    IReadOnlyList<CoordinatorEvent> Events,
+    IReadOnlyList<UserIdentityRecord> Identities,
+    IReadOnlyList<WorkerActivityRecord> WorkerActivities);
 
 public sealed record ApiError(string Error);
