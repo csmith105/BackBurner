@@ -120,7 +120,7 @@ button.small { font-size: 11px; padding: 6px 8px; }
 .status.failed, .status.misconfigured, .status.attention, .status.locked { color: var(--bad); }
 .status.running, .status.leased, .status.paused { color: var(--blue); }
 .status.gameworkerreserved, .status.inhibited, .status.offline, .status.status-blocked { color: var(--bad); }
-.status.humanactive, .status.pausedbyoperator, .status.status-human { color: var(--yellow); }
+.status.humanactive, .status.pausedbyoperator, .status.canceled, .status.status-human { color: var(--yellow); }
 .status.idlecooldown, .status.queued, .status.status-cooldown { color: var(--orange); }
 .status.draining, .status.status-working { color: var(--blue); }
 .status.status-ready { color: var(--green); }

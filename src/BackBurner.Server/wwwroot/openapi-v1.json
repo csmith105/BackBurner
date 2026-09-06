@@ -1,0 +1,352 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BackBurner Integration API",
+    "version": "1.0.0",
+    "description": "Create and control integration-owned encoding jobs, or read a bounded queue and worker summary. Admin-key security is enforced only when coordinator authentication is enabled."
+  },
+  "servers": [
+    { "url": "/" }
+  ],
+  "paths": {
+    "/api/v1/jobs": {
+      "post": {
+        "summary": "Create an integration-controlled job",
+        "description": "Returns a control token exactly once. Store it securely; the coordinator persists only its SHA-256 hash.",
+        "security": [
+          { "adminKey": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateIntegrationJobRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job created",
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "Relative status URL"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IntegrationJobCreatedResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/jobs/{jobId}": {
+      "parameters": [
+        {
+          "name": "jobId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "format": "uuid" }
+        }
+      ],
+      "get": {
+        "summary": "Read one integration-controlled job",
+        "security": [
+          { "jobToken": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current job state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IntegrationJobStatus" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/JobNotFound" }
+        }
+      },
+      "delete": {
+        "summary": "Cancel one integration-controlled job",
+        "description": "Queued work is removed from scheduling. Active work is fenced immediately and stops when its worker observes the rejected lease. Once the worker wins the fenced publication-authorization race, cancellation returns 409 instead. The terminal audit record remains. Repeating a successful request is safe.",
+        "security": [
+          { "jobToken": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Canceled, or already canceled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IntegrationJobStatus" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/JobNotFound" },
+          "409": {
+            "description": "The job is terminal or already committed to publication",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "summary": "Read queue and worker capacity",
+        "security": [
+          { "adminKey": [] }
+        ],
+        "parameters": [
+          {
+            "name": "queueLimit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded system summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IntegrationSystemStatus" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "summary": "Read this OpenAPI document",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "adminKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-BackBurner-Admin-Key",
+        "description": "Required for job creation and fleet status only when coordinator authentication is enabled."
+      },
+      "jobToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-BackBurner-Job-Token",
+        "description": "Opaque capability token returned once when the job is created."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ApiError" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Admin key missing or incorrect",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ApiError" }
+          }
+        }
+      },
+      "JobNotFound": {
+        "description": "The job does not exist, is not integration-controlled, or the control token is incorrect",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ApiError" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "HandBrakeSettings": {
+        "type": "object",
+        "properties": {
+          "container": { "type": "string", "enum": ["mkv", "mp4"], "default": "mkv" },
+          "videoEncoder": { "type": "string", "default": "x265" },
+          "quality": { "type": "number", "minimum": 0, "maximum": 51, "default": 20 },
+          "encoderPreset": { "type": "string", "default": "medium" },
+          "maxWidth": { "type": ["integer", "null"], "minimum": 1 },
+          "maxHeight": { "type": ["integer", "null"], "minimum": 1 },
+          "audioEncoder": { "type": "string", "default": "copy" },
+          "audioBitrateKbps": { "type": ["integer", "null"], "minimum": 1 },
+          "allAudio": { "type": "boolean", "default": true },
+          "allSubtitles": { "type": "boolean", "default": true },
+          "includeChapterMarkers": { "type": "boolean", "default": true },
+          "extraArguments": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": []
+          }
+        }
+      },
+      "CreateIntegrationJobRequest": {
+        "type": "object",
+        "required": ["displayName", "sourcePath", "destinationPath", "settings"],
+        "properties": {
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "sourcePath": { "type": "string", "examples": ["incoming:/example/source.mkv"] },
+          "destinationPath": { "type": "string", "examples": ["plex-movies:/Example (2026)/Example (2026).mkv"] },
+          "presetName": { "type": ["string", "null"] },
+          "settings": { "$ref": "#/components/schemas/HandBrakeSettings" },
+          "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10, "default": 3 },
+          "clientName": { "type": "string", "minLength": 1, "maxLength": 100, "default": "integration" }
+        }
+      },
+      "IntegrationJobStatus": {
+        "type": "object",
+        "required": ["apiVersion", "jobId", "displayName", "status", "requiredCapabilities", "createdAt", "updatedAt", "progress", "failureCount", "maxAttempts", "interruptionCount", "cancellationAllowed", "isTerminal"],
+        "properties": {
+          "apiVersion": { "type": "string", "const": "v1" },
+          "jobId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/JobStatus" },
+          "requiredCapabilities": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "nextEligibleAt": { "type": ["string", "null"], "format": "date-time" },
+          "assignedWorkerId": { "type": ["string", "null"] },
+          "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+          "etaSeconds": { "type": ["integer", "null"], "minimum": 0 },
+          "failureCount": { "type": "integer", "minimum": 0 },
+          "maxAttempts": { "type": "integer", "minimum": 1 },
+          "interruptionCount": { "type": "integer", "minimum": 0 },
+          "lastError": { "type": ["string", "null"] },
+          "outputBytes": { "type": ["integer", "null"], "minimum": 0 },
+          "canceledAt": { "type": ["string", "null"], "format": "date-time" },
+          "cancellationReason": { "type": ["string", "null"] },
+          "cancellationAllowed": { "type": "boolean" },
+          "isTerminal": { "type": "boolean" }
+        }
+      },
+      "IntegrationJobCreatedResponse": {
+        "type": "object",
+        "required": ["apiVersion", "jobId", "controlToken", "statusPath", "cancelPath", "job"],
+        "properties": {
+          "apiVersion": { "type": "string", "const": "v1" },
+          "jobId": { "type": "string", "format": "uuid" },
+          "controlToken": { "type": "string", "readOnly": true },
+          "statusPath": { "type": "string" },
+          "cancelPath": { "type": "string" },
+          "job": { "$ref": "#/components/schemas/IntegrationJobStatus" }
+        }
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": ["Queued", "Leased", "Running", "Paused", "Succeeded", "Failed", "Canceled"]
+      },
+      "IntegrationJobSummary": {
+        "type": "object",
+        "required": ["jobId", "displayName", "status", "requiredCapabilities", "createdAt", "progress", "submittedBy"],
+        "properties": {
+          "jobId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/JobStatus" },
+          "requiredCapabilities": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "nextEligibleAt": { "type": ["string", "null"], "format": "date-time" },
+          "assignedWorkerId": { "type": ["string", "null"] },
+          "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+          "etaSeconds": { "type": ["integer", "null"] },
+          "submittedBy": { "type": "string" }
+        }
+      },
+      "IntegrationWorkerSummary": {
+        "type": "object",
+        "required": ["workerId", "displayName", "mode", "availability", "blockingCategory", "availabilityReason", "lastSeenAt", "capabilities"],
+        "properties": {
+          "workerId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "mode": { "type": "string", "enum": ["PersonalDesktop", "SharedGameWorker", "DedicatedRenderNode"] },
+          "availability": { "type": "string" },
+          "blockingCategory": { "type": "string" },
+          "availabilityReason": { "type": "string" },
+          "readyAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastSeenAt": { "type": "string", "format": "date-time" },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "activeJob": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/IntegrationJobSummary" },
+              { "type": "null" }
+            ]
+          }
+        }
+      },
+      "IntegrationSystemStatus": {
+        "type": "object",
+        "required": ["apiVersion", "at", "jobs", "workers", "availableCapabilities", "queue", "workerDetails"],
+        "properties": {
+          "apiVersion": { "type": "string", "const": "v1" },
+          "at": { "type": "string", "format": "date-time" },
+          "jobs": {
+            "type": "object",
+            "required": ["queued", "leased", "running", "paused", "succeeded", "failed", "canceled"],
+            "properties": {
+              "queued": { "type": "integer" },
+              "leased": { "type": "integer" },
+              "running": { "type": "integer" },
+              "paused": { "type": "integer" },
+              "succeeded": { "type": "integer" },
+              "failed": { "type": "integer" },
+              "canceled": { "type": "integer" }
+            }
+          },
+          "workers": {
+            "type": "object",
+            "required": ["total", "available", "working", "offline"],
+            "properties": {
+              "total": { "type": "integer" },
+              "available": { "type": "integer" },
+              "working": { "type": "integer" },
+              "offline": { "type": "integer" }
+            }
+          },
+          "availableCapabilities": {
+            "type": "object",
+            "additionalProperties": { "type": "integer", "minimum": 0 }
+          },
+          "queue": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IntegrationJobSummary" }
+          },
+          "workerDetails": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IntegrationWorkerSummary" }
+          }
+        }
+      }
+    }
+  }
+}

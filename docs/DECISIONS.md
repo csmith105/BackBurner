@@ -74,3 +74,24 @@ rights or shared .NET runtime. Require reachable path mappings and a verified
 HandBrakeCLI before writing configuration. Refuse to replace configuration or
 upgrade while a worker is running; never accept API keys as command-line
 arguments.
+
+## 2026-09-05: Capability-scoped integration job control
+
+Expose machine clients through a versioned `/api/v1` contract and a checked-in
+OpenAPI 3.1 description rather than coupling them to the dashboard's broad
+snapshot. Creation and fleet status follow the existing admin-authentication
+policy. Creation returns a random per-job control token exactly once and stores
+only its SHA-256 hash; that capability can read or cancel only its job. Retain a
+terminal `Canceled` record and event instead of physically deleting work, so
+attempt and interruption history remain actionable.
+
+Make cancellation and final publication mutually ordered coordinator
+mutations. Integration jobs require `protocol:publication-fence-v1`; current
+workers advertise it automatically and request publication authorization using
+both lease UUID and fencing generation immediately before atomic rename. A
+legacy worker cannot claim integration work. Cancellation before authorization
+invalidates the lease without consuming the failure budget; authorization first
+makes cancellation return conflict. Adding `Canceled` is a persisted-state enum
+extension: do not roll a coordinator back to a release that predates this
+decision after a canceled job has been recorded unless that state is migrated or
+the old release is taught the new value.

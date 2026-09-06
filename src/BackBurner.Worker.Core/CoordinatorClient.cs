@@ -48,6 +48,35 @@ public sealed class CoordinatorClient : IDisposable
     public Task<bool> CompleteAsync(Guid jobId, CompletionReport report, CancellationToken cancellationToken) =>
         PostLeaseMessageAsync($"api/worker/jobs/{jobId}/complete", report, cancellationToken);
 
+    public async Task<bool> AuthorizePublicationAsync(
+        Guid jobId,
+        PublicationAuthorizationRequest request,
+        bool requirePublicationFence,
+        CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync(
+            $"api/worker/jobs/{jobId}/authorize-publication",
+            request,
+            jsonOptions,
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Conflict)
+        {
+            return false;
+        }
+        if (!requirePublicationFence && response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+        {
+            return await ProgressAsync(jobId, new ProgressReport
+            {
+                WorkerId = request.WorkerId,
+                Lease = request.Lease,
+                Progress = 1,
+                EtaSeconds = 0
+            }, cancellationToken);
+        }
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
     public Task<bool> FailAsync(Guid jobId, FailureReport report, CancellationToken cancellationToken) =>
         PostLeaseMessageAsync($"api/worker/jobs/{jobId}/fail", report, cancellationToken);
 

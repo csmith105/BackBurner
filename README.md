@@ -22,6 +22,8 @@ The project is an early household-scale prototype. Treat its coordinator as a tr
 - Explicit Codex inhibit markers, lifecycle-hook templates, and CPU monitoring fallback.
 - Full participation in the Cody game-worker broker: short leases, fenced execution, queue preemption, and prompt release.
 - Logical path mappings so the same job can resolve SMB paths on Windows and mounted paths on Linux.
+- Versioned integration API with per-job control tokens, polling, cancellation,
+  a bounded fleet/queue summary, and a served OpenAPI 3.1 contract.
 
 ## Repository map
 
@@ -33,6 +35,7 @@ The project is an early household-scale prototype. Treat its coordinator as a tr
 - `docs/ARCHITECTURE.md`: system shape and invariants.
 - `docs/WORKER-CONTRACT.md`: leasing, retries, interruptions, and availability.
 - `docs/OPERATIONS.md`: local build/run guidance and eventual deployment shape.
+- `docs/INTEGRATION-API.md`: versioned machine API, job handles, cancellation, and fleet status.
 - `docs/WINDOWS-WORKER-SETUP.md`: per-user Windows install and Codex handoff.
 - `docs/DEPLOYMENTS.md`: safe template for private deployment records.
 - `docs/CODEX-INTEGRATION.md`: reliable exclusion for active agent workloads.
@@ -67,6 +70,10 @@ of putting it in the JSON file. A deliberately unauthenticated trusted-LAN
 deployment leaves that value empty.
 
 BackBurner does not scan, rename, move, or encode anything merely by building or starting the coordinator. A worker must be deliberately configured and a job must be submitted.
+
+Applications can use the versioned JSON API documented in
+[`docs/INTEGRATION-API.md`](docs/INTEGRATION-API.md). Its OpenAPI 3.1 document is
+served at `/api/v1/openapi.json`.
 
 For an interactive Windows worker, use the guarded per-user installer described
 in [`docs/WINDOWS-WORKER-SETUP.md`](docs/WINDOWS-WORKER-SETUP.md). It keeps the

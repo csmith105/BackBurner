@@ -563,11 +563,12 @@ function batchCard(batch, jobs) {
   const batchJobs = jobs.filter(job => job.batchId === batch.id);
   const succeeded = batchJobs.filter(job => job.status.toLowerCase() === 'succeeded').length;
   const failed = batchJobs.filter(job => job.status.toLowerCase() === 'failed').length;
+  const canceled = batchJobs.filter(job => job.status.toLowerCase() === 'canceled').length;
   const active = batchJobs.filter(job => ACTIVE_STATUSES.has(job.status.toLowerCase())).length;
-  const status = succeeded === batchJobs.length ? 'Succeeded' : failed ? 'Attention' : active ? 'Running' : 'Queued';
+  const status = succeeded === batchJobs.length ? 'Succeeded' : failed ? 'Attention' : canceled && succeeded + canceled === batchJobs.length ? 'Canceled' : active ? 'Running' : 'Queued';
   const card = document.createElement('article'); card.className = 'worker batch-card';
   const head = document.createElement('div'); head.className = 'worker-head'; head.append(textElement('strong', batch.displayName), statusPill(status));
-  card.append(head, textElement('p', `${succeeded}/${batchJobs.length} complete${failed ? ` · ${failed} failed` : ''}${active ? ` · ${active} active` : ''}`), textElement('p', `${batch.sourceDirectory} · submitted by ${batch.submittedBy}`));
+  card.append(head, textElement('p', `${succeeded}/${batchJobs.length} complete${failed ? ` · ${failed} failed` : ''}${canceled ? ` · ${canceled} canceled` : ''}${active ? ` · ${active} active` : ''}`), textElement('p', `${batch.sourceDirectory} · submitted by ${batch.submittedBy}`));
   return card;
 }
 

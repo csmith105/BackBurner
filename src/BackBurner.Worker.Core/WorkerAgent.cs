@@ -15,6 +15,7 @@ public sealed class WorkerAgent : IDisposable
     private readonly IWorkerNotifier notifier;
     private readonly Action<string> log;
     private readonly CodyWorkerBroker? codyWorkerBroker;
+    private readonly string[] advertisedCapabilities;
     private Dictionary<string, string> profile = new(StringComparer.OrdinalIgnoreCase);
     private string? startupError;
 
@@ -34,6 +35,7 @@ public sealed class WorkerAgent : IDisposable
         coordinator = new CoordinatorClient(configuration, httpHandler);
         pathResolver = new LogicalPathResolver(configuration.Paths);
         availabilityProbe = new AvailabilityProbe(configuration, control);
+        advertisedCapabilities = ToolProbe.BuildAdvertisedCapabilities(configuration);
         if (configuration.Mode == WorkerMode.SharedGameWorker)
         {
             codyWorkerBroker = new CodyWorkerBroker(configuration, this.log);
@@ -352,11 +354,22 @@ public sealed class WorkerAgent : IDisposable
                 }
             }
 
-            // This accepted progress update is a final fencing check immediately before publication.
-            if (!await coordinator.ProgressAsync(job.Id, CreateProgress(claimed.Lease, 1, 0, false), cancellationToken))
+            // This fenced authorization serializes publication against an integration cancellation.
+            var requiresPublicationFence = job.RequiredCapabilities.Contains(
+                BackBurnerCapabilities.PublicationFenceV1,
+                StringComparer.OrdinalIgnoreCase);
+            if (!await coordinator.AuthorizePublicationAsync(
+                job.Id,
+                new PublicationAuthorizationRequest
+                {
+                    WorkerId = configuration.WorkerId,
+                    Lease = claimed.Lease
+                },
+                requiresPublicationFence,
+                cancellationToken))
             {
                 DeletePartial(partialDestination);
-                log($"Did not publish '{job.DisplayName}' because its lease was stale.");
+                log($"Did not publish '{job.DisplayName}' because its lease was stale or the job was canceled.");
                 return;
             }
             if (File.Exists(destination))
@@ -486,7 +499,7 @@ public sealed class WorkerAgent : IDisposable
             BlockingCategory = availability.BlockingCategory,
             AvailabilityReason = availability.Reason,
             ReadyAt = availability.ReadyAt,
-            Capabilities = configuration.Capabilities,
+            Capabilities = advertisedCapabilities,
             Profile = profile,
             ActiveJobId = activeJobId,
             Lease = lease

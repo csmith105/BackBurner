@@ -6,7 +6,7 @@ authentication before crossing an untrusted network, and use TLS when traffic
 leaves a trusted LAN.
 
 Never commit API keys, NAS credentials, Plex tokens, machine-local path maps,
-real media filenames, or coordinator state. Local worker configuration belongs
+integration job control tokens, real media filenames, or coordinator state. Local worker configuration belongs
 in an ignored `worker.local.json` file. Deployment secrets belong in the
 operating system's secret or service configuration, outside a release.
 

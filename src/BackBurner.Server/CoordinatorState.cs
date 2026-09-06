@@ -11,4 +11,5 @@ public sealed class CoordinatorState
     public List<CoordinatorEvent> Events { get; init; } = [];
     public List<UserIdentityRecord> Identities { get; init; } = [];
     public List<WorkerActivityRecord> WorkerActivities { get; init; } = [];
+    public List<IntegrationJobControlRecord> IntegrationJobControls { get; init; } = [];
 }

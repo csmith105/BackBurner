@@ -30,6 +30,18 @@ exposure.
 
 The web console lands on **Dashboard** and separates **New job**, **Workers & queue**, and **History** into top navigation tabs. The identity selector is attribution, not authentication: creating or selecting a name writes only the identity UUID to that browser's local storage. Select an identity before queueing so jobs record the operator. Worker cards provide an independent owner selector for grouping machines by person.
 
+The versioned application API is documented in `INTEGRATION-API.md`; its live
+OpenAPI document is `/api/v1/openapi.json`. Job creation and the read-only fleet
+summary use the admin-key policy. Per-job reads and cancellation use the
+one-time control token returned at creation. Back up integration clients' job ID
+and token pairs in their private state because the coordinator stores only a
+hash and cannot recover a lost token.
+
+An integration-created job requires `protocol:publication-fence-v1`. Upgrade at
+least one worker to the matching release before submitting through `/api/v1`.
+Older workers remain safe and can continue ordinary dashboard jobs, but the
+scheduler deliberately leaves integration work queued for a current worker.
+
 ## Worker configuration
 
 Copy `config/worker.example.json` to `worker.local.json`; that filename is ignored by Git. Configure a stable worker ID, the coordinator URL and key, HandBrakeCLI path, exact capabilities, and platform-specific logical roots.
@@ -69,7 +81,7 @@ The directory-batch UI can see only logical source roots explicitly configured u
 BackBurner__SourceRoots__source-media=/mnt/your-read-only-source
 ```
 
-The coordinator account needs read and directory-traversal permission, never write permission, on that mount. Each worker that may claim those jobs must map the same `nas-media` logical root to its local SMB or mounted representation. A scan recognizes a bounded set of common video extensions and is a candidate listing, not a media probe. Results start unchecked and queue nothing until the operator submits a selection. `BackBurner__MaximumScanFiles` defaults to 5,000 and may be lowered for a particularly large tree.
+The coordinator account needs read and directory-traversal permission, never write permission, on that mount. Each worker that may claim those jobs must map the same `source-media` logical root to its local SMB or mounted representation. A scan recognizes a bounded set of common video extensions and is a candidate listing, not a media probe. Results start unchecked and queue nothing until the operator submits a selection. `BackBurner__MaximumScanFiles` defaults to 5,000 and may be lowered for a particularly large tree.
 
 ## Windows interaction
 

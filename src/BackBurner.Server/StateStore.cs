@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BackBurner.Contracts;
@@ -212,6 +214,219 @@ public sealed class StateStore
         }
     }
 
+    public async Task<IntegrationJobCreatedResponse> EnqueueIntegrationAsync(
+        CreateIntegrationJobRequest request,
+        CancellationToken cancellationToken)
+    {
+        var clientName = request.ClientName?.Trim() ?? "";
+        if (clientName.Length is < 1 or > 100)
+        {
+            throw new ArgumentException("Client name must contain 1-100 characters.");
+        }
+
+        var createRequest = new CreateJobRequest
+        {
+            DisplayName = request.DisplayName,
+            SourcePath = request.SourcePath,
+            DestinationPath = request.DestinationPath,
+            PresetName = request.PresetName,
+            Settings = request.Settings,
+            MaxAttempts = request.MaxAttempts,
+            SubmittedBy = clientName
+        };
+        ValidateJob(createRequest);
+        var requiredCapabilities = RequiredCapabilities(createRequest.Settings)
+            .Append(BackBurnerCapabilities.PublicationFenceV1)
+            .ToArray();
+        var controlToken = GenerateControlToken();
+
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var job = new JobRecord
+            {
+                DisplayName = createRequest.DisplayName.Trim(),
+                SourcePath = createRequest.SourcePath.Trim(),
+                DestinationPath = createRequest.DestinationPath.Trim(),
+                PresetName = string.IsNullOrWhiteSpace(createRequest.PresetName) ? null : createRequest.PresetName.Trim(),
+                Settings = Clone(createRequest.Settings),
+                RequiredCapabilities = requiredCapabilities,
+                MaxAttempts = createRequest.MaxAttempts,
+                SubmittedBy = clientName
+            };
+            state.Jobs.Add(job);
+            state.IntegrationJobControls.Add(new IntegrationJobControlRecord
+            {
+                JobId = job.Id,
+                ControlTokenHash = HashControlToken(controlToken)
+            });
+            AddEvent("job.queued", $"Integration client '{clientName}' queued '{job.DisplayName}' with a {job.MaxAttempts}-attempt limit.", job.Id);
+            await PersistAsync(cancellationToken);
+            return new IntegrationJobCreatedResponse
+            {
+                JobId = job.Id,
+                ControlToken = controlToken,
+                StatusPath = $"/api/v1/jobs/{job.Id}",
+                CancelPath = $"/api/v1/jobs/{job.Id}",
+                Job = ToIntegrationJobStatus(job)
+            };
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<IntegrationJobStatus?> GetIntegrationJobAsync(
+        Guid jobId,
+        string? controlToken,
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var control = state.IntegrationJobControls.FirstOrDefault(item => item.JobId == jobId);
+            var job = state.Jobs.FirstOrDefault(item => item.Id == jobId);
+            return control is null || job is null || !ControlTokenMatches(control, controlToken)
+                ? null
+                : Clone(ToIntegrationJobStatus(job));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<IntegrationCancelResult> CancelIntegrationJobAsync(
+        Guid jobId,
+        string? controlToken,
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var control = state.IntegrationJobControls.FirstOrDefault(item => item.JobId == jobId);
+            var job = state.Jobs.FirstOrDefault(item => item.Id == jobId);
+            if (control is null || job is null || !ControlTokenMatches(control, controlToken))
+            {
+                return new IntegrationCancelResult(IntegrationCancelOutcome.NotFound);
+            }
+            if (job.Status == JobStatus.Canceled)
+            {
+                return new IntegrationCancelResult(IntegrationCancelOutcome.AlreadyCanceled, Clone(ToIntegrationJobStatus(job)));
+            }
+            if (job.Status is JobStatus.Succeeded or JobStatus.Failed)
+            {
+                return new IntegrationCancelResult(IntegrationCancelOutcome.TerminalConflict, Clone(ToIntegrationJobStatus(job)));
+            }
+            if (job.PublicationAuthorizedAt is not null)
+            {
+                return new IntegrationCancelResult(IntegrationCancelOutcome.TerminalConflict, Clone(ToIntegrationJobStatus(job)));
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var oldWorker = job.AssignedWorkerId;
+            if (job.Status is JobStatus.Leased or JobStatus.Running or JobStatus.Paused)
+            {
+                job.InterruptionCount++;
+                FinishCurrentAttempt(job, AttemptOutcome.Interrupted, "Canceled by its integration client.");
+            }
+            job.Status = JobStatus.Canceled;
+            job.CanceledAt = now;
+            job.CancellationReason = "Canceled by its integration client.";
+            job.NextEligibleAt = null;
+            job.EtaSeconds = null;
+            ClearLease(job);
+            if (oldWorker is not null)
+            {
+                ClearWorkerJob(oldWorker, job.Id);
+                UpdateWorkerActivityFor(oldWorker, now);
+            }
+            AddEvent("job.canceled", $"Integration client canceled '{job.DisplayName}'; no encoding failure was charged.", job.Id, oldWorker);
+            await PersistAsync(cancellationToken);
+            return new IntegrationCancelResult(IntegrationCancelOutcome.Canceled, Clone(ToIntegrationJobStatus(job)));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<IntegrationSystemStatus> IntegrationStatusAsync(int queueLimit, CancellationToken cancellationToken)
+    {
+        if (queueLimit is < 1 or > 500)
+        {
+            throw new ArgumentOutOfRangeException(nameof(queueLimit), "Queue limit must be between 1 and 500.");
+        }
+
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (MarkOfflineWorkers())
+            {
+                await PersistAsync(cancellationToken);
+            }
+
+            var availableWorkers = state.Workers
+                .Where(worker => worker.Availability == WorkerAvailability.Available && worker.ActiveJobId is null)
+                .ToArray();
+            var availableCapabilities = availableWorkers
+                .SelectMany(worker => worker.Capabilities.Distinct(StringComparer.OrdinalIgnoreCase))
+                .GroupBy(capability => capability, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+            var queue = state.Jobs
+                .Where(job => job.Status == JobStatus.Queued)
+                .OrderBy(job => job.CreatedAt)
+                .Take(queueLimit)
+                .Select(ToIntegrationJobSummary)
+                .ToArray();
+            var workerDetails = state.Workers
+                .OrderBy(worker => worker.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Select(worker => new IntegrationWorkerSummary
+                {
+                    WorkerId = worker.WorkerId,
+                    DisplayName = worker.DisplayName,
+                    Mode = worker.Mode,
+                    Availability = worker.Availability,
+                    BlockingCategory = worker.BlockingCategory,
+                    AvailabilityReason = worker.AvailabilityReason,
+                    ReadyAt = worker.ReadyAt,
+                    LastSeenAt = worker.LastSeenAt,
+                    Capabilities = worker.Capabilities,
+                    ActiveJob = worker.ActiveJobId is Guid activeJobId
+                        ? state.Jobs.Where(job => job.Id == activeJobId).Select(ToIntegrationJobSummary).FirstOrDefault()
+                        : null
+                })
+                .ToArray();
+
+            return Clone(new IntegrationSystemStatus
+            {
+                At = DateTimeOffset.UtcNow,
+                Jobs = new IntegrationJobCounts(
+                    state.Jobs.Count(job => job.Status == JobStatus.Queued),
+                    state.Jobs.Count(job => job.Status == JobStatus.Leased),
+                    state.Jobs.Count(job => job.Status == JobStatus.Running),
+                    state.Jobs.Count(job => job.Status == JobStatus.Paused),
+                    state.Jobs.Count(job => job.Status == JobStatus.Succeeded),
+                    state.Jobs.Count(job => job.Status == JobStatus.Failed),
+                    state.Jobs.Count(job => job.Status == JobStatus.Canceled)),
+                Workers = new IntegrationWorkerCounts(
+                    state.Workers.Count,
+                    availableWorkers.Length,
+                    state.Workers.Count(worker => worker.ActiveJobId is not null),
+                    state.Workers.Count(worker => worker.Availability == WorkerAvailability.Offline)),
+                AvailableCapabilities = availableCapabilities,
+                Queue = queue,
+                WorkerDetails = workerDetails
+            });
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async Task<BatchRecord> EnqueueBatchAsync(CreateBatchRequest request, CancellationToken cancellationToken)
     {
         ValidateBatch(request);
@@ -293,13 +508,13 @@ public sealed class StateStore
             worker.Capabilities = heartbeat.Capabilities.Distinct(StringComparer.OrdinalIgnoreCase).Order().ToArray();
             worker.Profile = heartbeat.Profile;
             worker.LastSeenAt = now;
-            worker.ActiveJobId = heartbeat.ActiveJobId;
-
+            worker.ActiveJobId = null;
             if (heartbeat.ActiveJobId is not null && heartbeat.Lease is not null)
             {
                 var job = state.Jobs.FirstOrDefault(item => item.Id == heartbeat.ActiveJobId);
                 if (job is not null && HasLease(job, heartbeat.WorkerId, heartbeat.Lease))
                 {
+                    worker.ActiveJobId = heartbeat.ActiveJobId;
                     job.LeaseExpiresAt = now.AddSeconds(options.LeaseSeconds);
                     job.UpdatedAt = now;
                 }
@@ -377,7 +592,6 @@ public sealed class StateStore
             {
                 return false;
             }
-
             job.Status = report.IsPaused ? JobStatus.Paused : JobStatus.Running;
             job.Progress = Math.Clamp(report.Progress, 0, 1);
             job.EtaSeconds = report.EtaSeconds is null ? null : Math.Max(0, report.EtaSeconds.Value);
@@ -407,6 +621,10 @@ public sealed class StateStore
             {
                 return false;
             }
+            if (state.IntegrationJobControls.Any(item => item.JobId == jobId) && job.PublicationAuthorizedAt is null)
+            {
+                return false;
+            }
 
             FinishCurrentAttempt(job, AttemptOutcome.Succeeded, $"Published {report.OutputBytes:N0} bytes.");
             job.Status = JobStatus.Succeeded;
@@ -418,6 +636,35 @@ public sealed class StateStore
             ClearWorkerJob(report.WorkerId, job.Id);
             UpdateWorkerActivityFor(report.WorkerId);
             AddEvent("job.succeeded", $"'{job.DisplayName}' completed and published.", job.Id, report.WorkerId);
+            await PersistAsync(cancellationToken);
+            return true;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public async Task<bool> AuthorizePublicationAsync(
+        Guid jobId,
+        PublicationAuthorizationRequest request,
+        CancellationToken cancellationToken)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var job = state.Jobs.FirstOrDefault(item => item.Id == jobId);
+            if (job is null || !HasLease(job, request.WorkerId, request.Lease))
+            {
+                return false;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            job.PublicationAuthorizedAt ??= now;
+            job.Progress = 1;
+            job.EtaSeconds = 0;
+            job.LeaseExpiresAt = now.AddSeconds(options.LeaseSeconds);
+            job.UpdatedAt = now;
             await PersistAsync(cancellationToken);
             return true;
         }
@@ -825,6 +1072,7 @@ public sealed class StateStore
         job.AssignedWorkerId = null;
         job.LeaseId = null;
         job.LeaseExpiresAt = null;
+        job.PublicationAuthorizedAt = null;
         job.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -968,8 +1216,12 @@ public sealed class StateStore
         }
     }
 
-    private static void ValidateSettings(HandBrakeSettings settings)
+    private static void ValidateSettings(HandBrakeSettings? settings)
     {
+        if (settings is null)
+        {
+            throw new ArgumentException("HandBrake settings are required.");
+        }
         if (settings.Container is not ("mkv" or "mp4"))
         {
             throw new ArgumentException("Container must be mkv or mp4.");
@@ -992,6 +1244,14 @@ public sealed class StateStore
         }
 
         var forbidden = new[] { "-i", "--input", "-o", "--output", "--queue-import-file", "--preset-import-file", "--preset-import-gui" };
+        if (settings.ExtraArguments is null)
+        {
+            throw new ArgumentException("Extra arguments must be an array when supplied.");
+        }
+        if (settings.ExtraArguments.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Extra arguments may not contain empty values.");
+        }
         if (settings.ExtraArguments.Any(argument => IsForbiddenArgument(argument, forbidden)))
         {
             throw new ArgumentException("Extra arguments may not replace input, output, queue, or preset import handling.");
@@ -1013,6 +1273,83 @@ public sealed class StateStore
     {
         var encoder = settings.VideoEncoder.ToLowerInvariant();
         return ["handbrake", $"encode:{encoder}"];
+    }
+
+    private static string GenerateControlToken()
+    {
+        return Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+
+    private static string HashControlToken(string controlToken)
+    {
+        return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(controlToken)));
+    }
+
+    private static bool ControlTokenMatches(IntegrationJobControlRecord control, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.Length > 512)
+        {
+            return false;
+        }
+
+        byte[] expected;
+        try
+        {
+            expected = Convert.FromBase64String(control.ControlTokenHash);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        var actual = SHA256.HashData(Encoding.UTF8.GetBytes(candidate));
+        return expected.Length == actual.Length && CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
+
+    private static IntegrationJobStatus ToIntegrationJobStatus(JobRecord job)
+    {
+        return new IntegrationJobStatus
+        {
+            JobId = job.Id,
+            DisplayName = job.DisplayName,
+            Status = job.Status,
+            RequiredCapabilities = job.RequiredCapabilities,
+            CreatedAt = job.CreatedAt,
+            UpdatedAt = job.UpdatedAt,
+            NextEligibleAt = job.NextEligibleAt,
+            AssignedWorkerId = job.AssignedWorkerId,
+            Progress = job.Progress,
+            EtaSeconds = job.EtaSeconds,
+            FailureCount = job.FailureCount,
+            MaxAttempts = job.MaxAttempts,
+            InterruptionCount = job.InterruptionCount,
+            LastError = job.LastError,
+            OutputBytes = job.OutputBytes,
+            CanceledAt = job.CanceledAt,
+            CancellationReason = job.CancellationReason,
+            CancellationAllowed = (job.Status is JobStatus.Queued or JobStatus.Leased or JobStatus.Running or JobStatus.Paused)
+                && job.PublicationAuthorizedAt is null,
+            IsTerminal = job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Canceled
+        };
+    }
+
+    private static IntegrationJobSummary ToIntegrationJobSummary(JobRecord job)
+    {
+        return new IntegrationJobSummary
+        {
+            JobId = job.Id,
+            DisplayName = job.DisplayName,
+            Status = job.Status,
+            RequiredCapabilities = job.RequiredCapabilities,
+            CreatedAt = job.CreatedAt,
+            NextEligibleAt = job.NextEligibleAt,
+            AssignedWorkerId = job.AssignedWorkerId,
+            Progress = job.Progress,
+            EtaSeconds = job.EtaSeconds,
+            SubmittedBy = job.SubmittedBy
+        };
     }
 
     private static T Clone<T>(T value)

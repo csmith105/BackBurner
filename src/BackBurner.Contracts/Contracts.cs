@@ -1,5 +1,10 @@
 namespace BackBurner.Contracts;
 
+public static class BackBurnerCapabilities
+{
+    public const string PublicationFenceV1 = "protocol:publication-fence-v1";
+}
+
 public enum JobStatus
 {
     Queued,
@@ -7,7 +12,8 @@ public enum JobStatus
     Running,
     Paused,
     Succeeded,
-    Failed
+    Failed,
+    Canceled
 }
 
 public enum WorkerAvailability
@@ -126,6 +132,17 @@ public sealed record CreateJobRequest
     public Guid? IdentityId { get; init; }
 }
 
+public sealed record CreateIntegrationJobRequest
+{
+    public required string DisplayName { get; init; }
+    public required string SourcePath { get; init; }
+    public required string DestinationPath { get; init; }
+    public string? PresetName { get; init; }
+    public required HandBrakeSettings Settings { get; init; }
+    public int MaxAttempts { get; init; } = 3;
+    public string ClientName { get; init; } = "integration";
+}
+
 public sealed record BatchItemRequest
 {
     public required string DisplayName { get; init; }
@@ -210,8 +227,99 @@ public sealed record JobRecord
     public int? EtaSeconds { get; set; }
     public string? LastError { get; set; }
     public long? OutputBytes { get; set; }
+    public DateTimeOffset? PublicationAuthorizedAt { get; set; }
+    public DateTimeOffset? CanceledAt { get; set; }
+    public string? CancellationReason { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<JobAttempt> Attempts { get; init; } = [];
+}
+
+public sealed record IntegrationJobStatus
+{
+    public string ApiVersion { get; init; } = "v1";
+    public required Guid JobId { get; init; }
+    public required string DisplayName { get; init; }
+    public required JobStatus Status { get; init; }
+    public required string[] RequiredCapabilities { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public required DateTimeOffset UpdatedAt { get; init; }
+    public DateTimeOffset? NextEligibleAt { get; init; }
+    public string? AssignedWorkerId { get; init; }
+    public decimal Progress { get; init; }
+    public int? EtaSeconds { get; init; }
+    public int FailureCount { get; init; }
+    public int MaxAttempts { get; init; }
+    public int InterruptionCount { get; init; }
+    public string? LastError { get; init; }
+    public long? OutputBytes { get; init; }
+    public DateTimeOffset? CanceledAt { get; init; }
+    public string? CancellationReason { get; init; }
+    public bool CancellationAllowed { get; init; }
+    public bool IsTerminal { get; init; }
+}
+
+public sealed record IntegrationJobCreatedResponse
+{
+    public string ApiVersion { get; init; } = "v1";
+    public required Guid JobId { get; init; }
+    public required string ControlToken { get; init; }
+    public required string StatusPath { get; init; }
+    public required string CancelPath { get; init; }
+    public required IntegrationJobStatus Job { get; init; }
+}
+
+public sealed record IntegrationJobSummary
+{
+    public required Guid JobId { get; init; }
+    public required string DisplayName { get; init; }
+    public required JobStatus Status { get; init; }
+    public required string[] RequiredCapabilities { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? NextEligibleAt { get; init; }
+    public string? AssignedWorkerId { get; init; }
+    public decimal Progress { get; init; }
+    public int? EtaSeconds { get; init; }
+    public required string SubmittedBy { get; init; }
+}
+
+public sealed record IntegrationWorkerSummary
+{
+    public required string WorkerId { get; init; }
+    public required string DisplayName { get; init; }
+    public WorkerMode Mode { get; init; }
+    public WorkerAvailability Availability { get; init; }
+    public WorkerBlockingCategory BlockingCategory { get; init; }
+    public required string AvailabilityReason { get; init; }
+    public DateTimeOffset? ReadyAt { get; init; }
+    public required DateTimeOffset LastSeenAt { get; init; }
+    public required string[] Capabilities { get; init; }
+    public IntegrationJobSummary? ActiveJob { get; init; }
+}
+
+public sealed record IntegrationJobCounts(
+    int Queued,
+    int Leased,
+    int Running,
+    int Paused,
+    int Succeeded,
+    int Failed,
+    int Canceled);
+
+public sealed record IntegrationWorkerCounts(
+    int Total,
+    int Available,
+    int Working,
+    int Offline);
+
+public sealed record IntegrationSystemStatus
+{
+    public string ApiVersion { get; init; } = "v1";
+    public required DateTimeOffset At { get; init; }
+    public required IntegrationJobCounts Jobs { get; init; }
+    public required IntegrationWorkerCounts Workers { get; init; }
+    public required IReadOnlyDictionary<string, int> AvailableCapabilities { get; init; }
+    public required IReadOnlyList<IntegrationJobSummary> Queue { get; init; }
+    public required IReadOnlyList<IntegrationWorkerSummary> WorkerDetails { get; init; }
 }
 
 public sealed record WorkerHeartbeat
@@ -288,6 +396,12 @@ public sealed record CompletionReport
     public required string WorkerId { get; init; }
     public required LeaseProof Lease { get; init; }
     public long OutputBytes { get; init; }
+}
+
+public sealed record PublicationAuthorizationRequest
+{
+    public required string WorkerId { get; init; }
+    public required LeaseProof Lease { get; init; }
 }
 
 public sealed record FailureReport

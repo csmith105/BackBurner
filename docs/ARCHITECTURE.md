@@ -36,12 +36,37 @@ Coordinator responsibilities:
 - Keep worker status, job progress, ETA, error summaries, and an audit event stream.
 - Attribute submitted jobs and worker ownership to passwordless local identities.
 - Record worker activity only when its typed state or active job changes; refresh the open segment on heartbeats rather than appending heartbeat samples.
+- Expose a versioned integration API whose per-job control tokens are hashed at
+  rest and authorize status/cancellation for only the job that created them.
 
 HTTP authentication is a deployment policy rather than a scheduler invariant.
 It defaults on, but may be explicitly disabled for a coordinator bound only to
 a trusted LAN. The public runtime configuration endpoint lets the browser hide
 the key prompt in that mode. Authentication must be restored before the port is
 reachable from any untrusted network.
+
+## Integration API
+
+The `/api/v1` JSON API is a narrow, stable projection rather than a wrapper over
+the dashboard snapshot. Job creation and fleet status follow the deployment's
+administrator-authentication policy. A creation response includes a random
+control token exactly once; only its SHA-256 hash is persisted. Supplying that
+token in `X-BackBurner-Job-Token` can read or cancel its one job. It confers no
+access to other jobs, presets, workers, media paths, or administrative writes.
+
+Cancellation retains a terminal `Canceled` job and audit event instead of
+deleting history. For active work it invalidates the coordinator lease, causing
+the existing stale-fence worker path to stop HandBrake and delete only the
+partial output. Integration jobs additionally require the
+`protocol:publication-fence-v1` worker capability. Such workers obtain a final
+fenced publication authorization immediately before atomic rename. The state
+lock therefore orders cancellation and publication: only one can win. Older
+workers remain eligible for ordinary web jobs but cannot claim integration jobs.
+
+The fleet-status endpoint contains bounded queued-job summaries and worker
+availability/capability data, not media paths, settings, logs, or a full health
+model. The complete wire contract is the checked-in OpenAPI 3.1 document served
+at `/api/v1/openapi.json`.
 
 ## Worker
 

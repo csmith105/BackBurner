@@ -12,6 +12,10 @@ Read `README.md`, `docs/ARCHITECTURE.md`, `docs/WORKER-CONTRACT.md`, `docs/DECIS
 6. Encoder failures consume the bounded attempt budget. Human stops, service shutdowns, and coordinator lease interruptions do not.
 7. Job creation copies a preset snapshot. Editing or deleting the named preset must never change an already queued job.
 8. Do not commit credentials, worker API keys, NAS credentials, Plex tokens, machine-local mappings, or real media filenames.
+9. Integration job cancellation and final publication must remain mutually
+   fenced. Integration work requires `protocol:publication-fence-v1`; never let
+   a legacy worker claim it or publish without lease UUID, fencing generation,
+   and coordinator publication authorization.
 
 ## Development expectations
 

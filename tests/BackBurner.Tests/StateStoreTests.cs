@@ -293,6 +293,172 @@ public sealed class StateStoreTests : IDisposable
         Assert.Contains(snapshot.WorkerActivities, item => item.Kind == WorkerActivityKind.EncodingCpu && item.JobId == job.Id);
     }
 
+    [Fact]
+    public async Task Integration_control_token_reads_and_cancels_only_its_job_without_being_persisted()
+    {
+        var created = await EnqueueIntegrationX265();
+
+        Assert.Matches("^[A-Za-z0-9_-]{43}$", created.ControlToken);
+        Assert.Null(await store.GetIntegrationJobAsync(created.JobId, "wrong-token", CancellationToken.None));
+        var queued = await store.GetIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.NotNull(queued);
+        Assert.Equal(JobStatus.Queued, queued.Status);
+        Assert.False(queued.IsTerminal);
+
+        var persistedJson = await File.ReadAllTextAsync(Path.Combine(temporaryRoot, "state.json"));
+        Assert.DoesNotContain(created.ControlToken, persistedJson, StringComparison.Ordinal);
+
+        var rejected = await store.CancelIntegrationJobAsync(created.JobId, "wrong-token", CancellationToken.None);
+        Assert.Equal(IntegrationCancelOutcome.NotFound, rejected.Outcome);
+
+        var canceled = await store.CancelIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.Equal(IntegrationCancelOutcome.Canceled, canceled.Outcome);
+        Assert.Equal(JobStatus.Canceled, canceled.Job?.Status);
+        Assert.True(canceled.Job?.IsTerminal);
+        Assert.Equal(0, canceled.Job?.FailureCount);
+
+        var repeated = await store.CancelIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.Equal(IntegrationCancelOutcome.AlreadyCanceled, repeated.Outcome);
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+        Assert.Contains(snapshot.Events, item => item.Type == "job.canceled" && item.JobId == created.JobId);
+
+        var reloadedStore = new StateStore(Options.Create(new CoordinatorOptions
+        {
+            DataFile = "state.json",
+            LeaseSeconds = 30,
+            OfflineAfterSeconds = 30,
+            RetryBaseDelaySeconds = 0
+        }), new TestEnvironment(temporaryRoot));
+        var reloaded = await reloadedStore.GetIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.Equal(JobStatus.Canceled, reloaded?.Status);
+    }
+
+    [Fact]
+    public async Task Canceling_active_integration_work_interrupts_attempt_and_fences_worker_without_failure()
+    {
+        var created = await EnqueueIntegrationX265();
+        await RegisterWorker("worker-a", "encode:x265", BackBurnerCapabilities.PublicationFenceV1);
+        var claim = await store.ClaimAsync("worker-a", CancellationToken.None);
+        Assert.NotNull(claim);
+
+        var canceled = await store.CancelIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.Equal(IntegrationCancelOutcome.Canceled, canceled.Outcome);
+        Assert.False(await store.ProgressAsync(created.JobId, new ProgressReport
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease,
+            Progress = .5m
+        }, CancellationToken.None));
+        await store.HeartbeatAsync(new WorkerHeartbeat
+        {
+            WorkerId = "worker-a",
+            DisplayName = "worker-a",
+            Availability = WorkerAvailability.Available,
+            Capabilities = ["handbrake", "encode:x265", BackBurnerCapabilities.PublicationFenceV1],
+            ActiveJobId = created.JobId,
+            Lease = claim.Lease
+        }, CancellationToken.None);
+
+        var snapshot = await store.SnapshotAsync(CancellationToken.None);
+        var job = snapshot.Jobs.Single(item => item.Id == created.JobId);
+        Assert.Equal(JobStatus.Canceled, job.Status);
+        Assert.Equal(0, job.FailureCount);
+        Assert.Equal(1, job.InterruptionCount);
+        Assert.Equal(AttemptOutcome.Interrupted, job.Attempts.Single().Outcome);
+        Assert.Null(snapshot.Workers.Single(item => item.WorkerId == "worker-a").ActiveJobId);
+    }
+
+    [Fact]
+    public async Task Integration_cannot_cancel_a_job_after_successful_publication()
+    {
+        var created = await EnqueueIntegrationX265();
+        await RegisterWorker("worker-a", "encode:x265", BackBurnerCapabilities.PublicationFenceV1);
+        var claim = await store.ClaimAsync("worker-a", CancellationToken.None);
+        Assert.NotNull(claim);
+        Assert.True(await store.AuthorizePublicationAsync(created.JobId, new PublicationAuthorizationRequest
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease
+        }, CancellationToken.None));
+        Assert.True(await store.CompleteAsync(created.JobId, new CompletionReport
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease,
+            OutputBytes = 1_024
+        }, CancellationToken.None));
+
+        var result = await store.CancelIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+        Assert.Equal(IntegrationCancelOutcome.TerminalConflict, result.Outcome);
+        Assert.Equal(JobStatus.Succeeded, result.Job?.Status);
+    }
+
+    [Fact]
+    public async Task Fenced_publication_authorization_wins_deterministically_over_late_cancellation()
+    {
+        var created = await EnqueueIntegrationX265();
+        await RegisterWorker("worker-a", "encode:x265", BackBurnerCapabilities.PublicationFenceV1);
+        var claim = await store.ClaimAsync("worker-a", CancellationToken.None);
+        Assert.NotNull(claim);
+
+        Assert.True(await store.AuthorizePublicationAsync(created.JobId, new PublicationAuthorizationRequest
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease
+        }, CancellationToken.None));
+        var result = await store.CancelIntegrationJobAsync(created.JobId, created.ControlToken, CancellationToken.None);
+
+        Assert.Equal(IntegrationCancelOutcome.TerminalConflict, result.Outcome);
+        Assert.False(result.Job?.CancellationAllowed);
+        Assert.True(await store.CompleteAsync(created.JobId, new CompletionReport
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease,
+            OutputBytes = 2_048
+        }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Integration_completion_is_rejected_without_publication_authorization()
+    {
+        var created = await EnqueueIntegrationX265();
+        await RegisterWorker("worker-a", "encode:x265", BackBurnerCapabilities.PublicationFenceV1);
+        var claim = await store.ClaimAsync("worker-a", CancellationToken.None);
+        Assert.NotNull(claim);
+
+        Assert.False(await store.CompleteAsync(created.JobId, new CompletionReport
+        {
+            WorkerId = "worker-a",
+            Lease = claim.Lease,
+            OutputBytes = 2_048
+        }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Legacy_worker_without_publication_fence_capability_cannot_claim_integration_job()
+    {
+        await EnqueueIntegrationX265();
+        await RegisterWorker("legacy-worker", "encode:x265");
+
+        Assert.Null(await store.ClaimAsync("legacy-worker", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Integration_status_reports_bounded_queue_and_available_worker_capabilities()
+    {
+        var created = await EnqueueIntegrationX265();
+        await RegisterWorker("worker-a", "encode:x265");
+
+        var status = await store.IntegrationStatusAsync(100, CancellationToken.None);
+
+        Assert.Equal("v1", status.ApiVersion);
+        Assert.Equal(1, status.Jobs.Queued);
+        Assert.Equal(1, status.Workers.Total);
+        Assert.Equal(1, status.Workers.Available);
+        Assert.Equal(1, status.AvailableCapabilities["encode:x265"]);
+        Assert.Equal(created.JobId, status.Queue.Single().JobId);
+        Assert.Null(status.WorkerDetails.Single().ActiveJob);
+    }
+
     private Task<JobRecord> EnqueueX265()
     {
         return store.EnqueueAsync(new CreateJobRequest
@@ -302,6 +468,19 @@ public sealed class StateStoreTests : IDisposable
             DestinationPath = "plex-movies:/Test (2026)/Test (2026).mkv",
             Settings = new HandBrakeSettings { VideoEncoder = "x265" },
             MaxAttempts = 3
+        }, CancellationToken.None);
+    }
+
+    private Task<IntegrationJobCreatedResponse> EnqueueIntegrationX265()
+    {
+        return store.EnqueueIntegrationAsync(new CreateIntegrationJobRequest
+        {
+            DisplayName = "Integration test video",
+            SourcePath = "incoming:/source.mkv",
+            DestinationPath = "plex-movies:/Test (2026)/Integration.mkv",
+            Settings = new HandBrakeSettings { VideoEncoder = "x265" },
+            MaxAttempts = 3,
+            ClientName = "test-client"
         }, CancellationToken.None);
     }
 

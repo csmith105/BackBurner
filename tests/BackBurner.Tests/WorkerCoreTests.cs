@@ -1,5 +1,6 @@
 using BackBurner.Contracts;
 using BackBurner.Worker.Core;
+using System.Net;
 using System.Text.Json;
 
 namespace BackBurner.Tests;
@@ -95,6 +96,19 @@ public sealed class WorkerCoreTests : IDisposable
     }
 
     [Fact]
+    public void Worker_always_advertises_the_fenced_publication_protocol_once()
+    {
+        var configuration = CreateDedicatedConfiguration(Path.Combine(temporaryRoot, "inhibits")) with
+        {
+            Capabilities = ["handbrake", BackBurnerCapabilities.PublicationFenceV1]
+        };
+
+        var capabilities = ToolProbe.BuildAdvertisedCapabilities(configuration);
+
+        Assert.Single(capabilities, item => item == BackBurnerCapabilities.PublicationFenceV1);
+    }
+
+    [Fact]
     public async Task Empty_worker_api_key_does_not_send_an_authentication_header()
     {
         var handler = new CaptureHandler();
@@ -115,6 +129,45 @@ public sealed class WorkerCoreTests : IDisposable
         }, CancellationToken.None);
 
         Assert.False(handler.HadWorkerKeyHeader);
+    }
+
+    [Fact]
+    public async Task Publication_authorization_falls_back_to_final_progress_only_for_ordinary_legacy_jobs()
+    {
+        var handler = new SequenceHandler(HttpStatusCode.NotFound, HttpStatusCode.NoContent);
+        using var client = new CoordinatorClient(CreateDedicatedConfiguration(Path.Combine(temporaryRoot, "inhibits")), handler);
+        var request = new PublicationAuthorizationRequest
+        {
+            WorkerId = "test-worker",
+            Lease = new LeaseProof(Guid.NewGuid(), 7)
+        };
+
+        var accepted = await client.AuthorizePublicationAsync(Guid.NewGuid(), request, requirePublicationFence: false, CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.Collection(
+            handler.Paths,
+            path => Assert.EndsWith("/authorize-publication", path, StringComparison.Ordinal),
+            path => Assert.EndsWith("/progress", path, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Integration_publication_never_falls_back_when_fence_endpoint_is_missing()
+    {
+        var handler = new SequenceHandler(HttpStatusCode.NotFound);
+        using var client = new CoordinatorClient(CreateDedicatedConfiguration(Path.Combine(temporaryRoot, "inhibits")), handler);
+        var request = new PublicationAuthorizationRequest
+        {
+            WorkerId = "test-worker",
+            Lease = new LeaseProof(Guid.NewGuid(), 8)
+        };
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.AuthorizePublicationAsync(
+            Guid.NewGuid(),
+            request,
+            requirePublicationFence: true,
+            CancellationToken.None));
+        Assert.Single(handler.Paths);
     }
 
     [Theory]
@@ -270,6 +323,19 @@ public sealed class WorkerCoreTests : IDisposable
         {
             HadWorkerKeyHeader = request.Headers.Contains("X-BackBurner-Worker-Key");
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
+        }
+    }
+
+    private sealed class SequenceHandler(params HttpStatusCode[] statuses) : HttpMessageHandler
+    {
+        private readonly Queue<HttpStatusCode> remaining = new(statuses);
+        public List<string> Paths { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Paths.Add(request.RequestUri?.AbsolutePath ?? "");
+            var status = remaining.Count > 0 ? remaining.Dequeue() : HttpStatusCode.NoContent;
+            return Task.FromResult(new HttpResponseMessage(status));
         }
     }
 

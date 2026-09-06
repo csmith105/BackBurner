@@ -3,15 +3,23 @@
 ## Job states
 
 ```text
-queued -> leased -> running -> succeeded
-   ^         |         |
-   |         |         +-> queued  (encoder failure below max attempts)
-   |         +------------> queued  (lease expiration/interruption)
-   +----------------------  (human Stop & Requeue; no failure charged)
-                         \-> failed (encoder failure reaches max attempts)
+queued -----> leased -----> running -----> succeeded
+  ^             |              |
+  |             |              +---------> failed (attempt budget exhausted)
+  |             +------------------------> queued (lease interruption)
+  +--------------------------------------  queued (retry or Stop & Requeue)
+  |             |              |
+  +-------------+--------------+---------> canceled (integration control token)
 ```
 
 `paused` and `draining` describe live worker execution/availability; they do not release ownership. A paused process must continue renewing its lease.
+
+Integration-created work also requires `protocol:publication-fence-v1`. A
+worker advertising it calls the fenced publication-authorization endpoint after
+the encoder has produced a valid partial and immediately before atomic rename.
+Cancellation and authorization take the same coordinator state lock. If cancel
+wins, the lease becomes stale and the worker deletes the partial. If authorize
+wins, cancellation returns a terminal conflict and the worker may publish.
 
 ## Fencing
 
@@ -24,6 +32,9 @@ Every claim creates a new lease UUID and increments a monotonic per-job generati
 - Below the maximum, the coordinator requeues with bounded exponential delay and records the error.
 - At the maximum, the job becomes `failed` and retains its last error for the UI.
 - Human Stop & Requeue, planned service shutdown, and ordinary lease expiration increment `interruptionCount`, not `failureCount`.
+- Canceling active integration work records an interruption, fences the worker,
+  and ends in `Canceled` without consuming an encoding attempt. Canceling queued
+  work records no attempt or interruption.
 - A worker that repeatedly loses leases should eventually be quarantined independently of any job's encoding failure budget.
 
 Retries always begin from a clean partial output. HandBrakeCLI cannot safely resume an encode after its process exits; its interactive pause/resume works only while the original process is alive.

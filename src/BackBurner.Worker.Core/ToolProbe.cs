@@ -1,10 +1,20 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using BackBurner.Contracts;
 
 namespace BackBurner.Worker.Core;
 
 public static class ToolProbe
 {
+    public static string[] BuildAdvertisedCapabilities(WorkerConfiguration configuration)
+    {
+        return configuration.Capabilities
+            .Append(BackBurnerCapabilities.PublicationFenceV1)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public static Dictionary<string, string> BuildHostProfile(WorkerConfiguration configuration)
     {
         return new Dictionary<string, string>(configuration.Profile, StringComparer.OrdinalIgnoreCase)
