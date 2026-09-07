@@ -39,6 +39,8 @@ The project is an early household-scale prototype. Treat its coordinator as a tr
 - `docs/WINDOWS-WORKER-SETUP.md`: per-user Windows install and Codex handoff.
 - `docs/DEPLOYMENTS.md`: safe template for private deployment records.
 - `docs/CODEX-INTEGRATION.md`: reliable exclusion for active agent workloads.
+- `docs/UPSCALING-RESEARCH.md`: open-source upscaler options, quality evaluation,
+  hardware constraints, and a staged integration plan.
 - `docs/DECISIONS.md`: durable decision log.
 - `AGENTS.md`: orientation and guardrails for future Codex agents.
 
